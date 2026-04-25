@@ -1,0 +1,21 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Model files (large binaries, stored separately)
+*.bin
+*.tflite
+*.task
+app/src/main/assets/models/
+
+# Security
+*.jks
+*.keystore
+secrets.properties

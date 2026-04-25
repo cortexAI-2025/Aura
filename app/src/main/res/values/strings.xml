@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aura</string>
+    <string name="notification_channel_agent">Aura Agent</string>
+    <string name="accessibility_service_description">Aura uses Accessibility to read on-screen content and execute actions on your behalf. All data stays on-device.</string>
+</resources>
