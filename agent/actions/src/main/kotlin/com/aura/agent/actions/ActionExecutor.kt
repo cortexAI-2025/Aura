@@ -11,9 +11,9 @@ import javax.inject.Singleton
 /**
  * Routes an [AgentAction] to the appropriate [ToolHandler] and returns the result.
  *
- * Each [ToolHandler] is responsible for a single [ToolType] and receives the raw
- * params map from the LLM. Handlers are registered via a Hilt multibinding
- * (see [ActionModule]) so new tools are added without touching this class.
+ * [ActionGuard] must be consulted BEFORE calling [execute] — the executor assumes
+ * the action has already been cleared. This separation keeps the executor simple
+ * and makes guard logic independently testable.
  */
 @Singleton
 class ActionExecutor @Inject constructor(

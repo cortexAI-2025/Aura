@@ -8,7 +8,12 @@ plugins {
 android {
     namespace = "com.aura.ai.engine"
     compileSdk = 35
-    defaultConfig { minSdk = 26 }
+    defaultConfig {
+        minSdk = 26
+        // Keep TFLite model files from being compressed — required for mmap
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+    }
+    aaptOptions { noCompress += listOf("tflite") }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -22,6 +27,10 @@ dependencies {
 
     // MediaPipe on-device LLM inference (Gemma 2B/7B)
     implementation(libs.mediapipe.llm)
+
+    // TFLite for MiniLM-L6-v2 INT8 embedding model
+    implementation(libs.tflite.core)
+    implementation(libs.tflite.gpu)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

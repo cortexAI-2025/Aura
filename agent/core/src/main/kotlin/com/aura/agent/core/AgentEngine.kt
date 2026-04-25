@@ -1,6 +1,8 @@
 package com.aura.agent.core
 
 import com.aura.agent.actions.ActionExecutor
+import com.aura.agent.actions.ActionGuard
+import com.aura.agent.actions.GuardDecision
 import com.aura.agent.memory.MemoryManager
 import com.aura.ai.engine.LLMEngine
 import com.aura.ai.engine.PromptBuilder
@@ -34,6 +36,7 @@ class AgentEngine @Inject constructor(
     private val llmEngine: LLMEngine,
     private val memoryManager: MemoryManager,
     private val actionExecutor: ActionExecutor,
+    private val actionGuard: ActionGuard,
     private val promptBuilder: PromptBuilder,
     private val conversationRepository: ConversationRepository,
     private val goalRepository: GoalRepository,
@@ -101,11 +104,22 @@ class AgentEngine @Inject constructor(
                 break
             }
 
-            // Check if the action requires user confirmation
-            if (action.requiresConfirmation || needsConfirmation(action, userRules)) {
-                emit(AgentEvent.ConfirmationRequired(action))
-                // Execution pauses here — caller must call confirmAndContinue()
-                return@flow
+            // Run through the safety sandbox before executing
+            when (val decision = actionGuard.evaluate(action, userRules)) {
+                is GuardDecision.Block -> {
+                    Timber.w("Action blocked: ${decision.reason}")
+                    // Inject the block reason as an observation so the LLM can adapt
+                    prompt = promptBuilder.buildObservationPrompt(
+                        prompt, action.tool.name,
+                        "BLOCKED: ${decision.reason}"
+                    )
+                    continue
+                }
+                is GuardDecision.RequireConfirmation -> {
+                    emit(AgentEvent.ConfirmationRequired(action))
+                    return@flow
+                }
+                GuardDecision.Allow -> Unit
             }
 
             // Execute the action
@@ -130,13 +144,6 @@ class AgentEngine @Inject constructor(
         emit(AgentEvent.Error(e.message ?: "Unknown error"))
     }
 
-    private fun needsConfirmation(action: AgentAction, rules: UserRules): Boolean {
-        return when (action.tool) {
-            ToolType.MESSAGE_SEND, ToolType.PHONE_CALL -> rules.requireConfirmationForSend
-            ToolType.CALENDAR_WRITE -> rules.autonomyLevel == AutonomyLevel.SUPERVISED
-            else -> false
-        }
-    }
 }
 
 sealed interface AgentEvent {
