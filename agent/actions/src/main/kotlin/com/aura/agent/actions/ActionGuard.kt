@@ -1,10 +1,12 @@
 package com.aura.agent.actions
 
+import com.aura.core.common.AuraLogger
+import com.aura.core.common.AuraLogger.TAG_GUARD
 import com.aura.core.domain.model.AgentAction
 import com.aura.core.domain.model.AutonomyLevel
 import com.aura.core.domain.model.ToolType
 import com.aura.core.domain.model.UserRules
-import timber.log.Timber
+import com.aura.core.domain.model.displayName
 import java.time.LocalTime
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,68 +17,84 @@ import javax.inject.Singleton
  *
  * Decision hierarchy (first matching rule wins):
  *   1. Tool explicitly forbidden → Block
- *   2. Quiet hours active + side-effectful tool → Block
- *   3. Budget exceeded → Block
- *   4. Amount requires confirmation → RequireConfirmation
- *   5. SUPERVISED mode + write/send tool → RequireConfirmation
- *   6. Action self-flags requiresConfirmation → RequireConfirmation
- *   7. → Allow
- *
- * All decisions are logged with their reason so the user can audit Aura's
- * behaviour history from the timeline screen.
+ *   2. Recipient in allowedContacts (MESSAGE_SEND) → Allow immediately (bypasses quiet hours)
+ *   3. Quiet hours active + side-effectful tool → Block
+ *   4. Budget exceeded → Block
+ *   5. Amount requires confirmation → RequireConfirmation
+ *   6. SUPERVISED mode + write/send tool → RequireConfirmation
+ *   7. Action self-flags requiresConfirmation → RequireConfirmation
+ *   8. → Allow
  */
 @Singleton
 class ActionGuard @Inject constructor() {
 
     fun evaluate(action: AgentAction, rules: UserRules): GuardDecision {
+        val toolName = action.tool.displayName()
+
         // ── 1. Tool allowlist ────────────────────────────────────────────────
         if (action.tool !in rules.allowedTools) {
+            AuraLogger.log(TAG_GUARD, "CHECK $toolName → BLOCKED (not in allowedTools)")
             return GuardDecision.Block("Tool ${action.tool} is not in your allowed tools list.")
-                .also { Timber.w("Guard BLOCKED ${action.tool}: not allowed") }
         }
 
-        // ── 2. Quiet hours ───────────────────────────────────────────────────
+        // ── 2. Pre-approved contact fast-path (bypasses quiet hours) ─────────
+        // Contacts in allowedContacts are trusted for autonomous messaging at any time.
+        if (action.tool == ToolType.MESSAGE_SEND && rules.allowedContacts.isNotEmpty()) {
+            val recipient = action.params["recipient"] ?: ""
+            if (recipient in rules.allowedContacts) {
+                val reason = "$recipient in allowedContacts"
+                AuraLogger.log(TAG_GUARD, "CHECK $toolName → ALLOWED ($reason)")
+                return GuardDecision.Allow(reason)
+            }
+        }
+
+        // ── 3. Quiet hours ───────────────────────────────────────────────────
         if (action.tool.hasSideEffects() && isQuietHour(rules)) {
+            AuraLogger.log(TAG_GUARD, "CHECK $toolName → BLOCKED (quiet hours)")
             return GuardDecision.Block(
                 "Quiet hours active (${rules.quietHoursStart}h–${rules.quietHoursEnd}h). " +
                 "Action ${action.tool} deferred until morning."
-            ).also { Timber.i("Guard BLOCKED ${action.tool}: quiet hours") }
+            )
         }
 
-        // ── 3 & 4. Budget ────────────────────────────────────────────────────
+        // ── 4 & 5. Budget ────────────────────────────────────────────────────
         val budget = rules.budget
         if (budget != null && action.tool.isFinancial()) {
             val amountCents = action.params["amount_cents"]?.toLongOrNull() ?: 0L
             if (amountCents > budget.maxAmountCents) {
+                AuraLogger.log(TAG_GUARD, "CHECK $toolName → BLOCKED (budget exceeded)")
                 return GuardDecision.Block(
                     "Amount ${amountCents / 100.0} ${budget.currency} exceeds your budget cap " +
                     "of ${budget.maxAmountCents / 100.0} ${budget.currency}."
-                ).also { Timber.w("Guard BLOCKED ${action.tool}: budget exceeded") }
+                )
             }
             if (amountCents > budget.requireConfirmationAboveCents) {
+                AuraLogger.log(TAG_GUARD, "CHECK $toolName → CONFIRM (amount above threshold)")
                 return GuardDecision.RequireConfirmation(
                     "Confirm payment of ${amountCents / 100.0} ${budget.currency}? " +
                     "(cap: ${budget.maxAmountCents / 100.0} ${budget.currency})"
-                ).also { Timber.i("Guard CONFIRM ${action.tool}: amount above confirmation threshold") }
+                )
             }
         }
 
-        // ── 5. SUPERVISED mode for write/send tools ──────────────────────────
+        // ── 6. SUPERVISED mode for write/send tools ──────────────────────────
         if (rules.autonomyLevel == AutonomyLevel.SUPERVISED && action.tool.isWriteAction()) {
+            AuraLogger.log(TAG_GUARD, "CHECK $toolName → CONFIRM (supervised mode)")
             return GuardDecision.RequireConfirmation(
                 "Supervised mode: confirm ${action.tool.humanName()}?"
-            ).also { Timber.i("Guard CONFIRM ${action.tool}: supervised mode") }
+            )
         }
 
-        // ── 6. Action self-declared confirmation ─────────────────────────────
+        // ── 7. Action self-declared confirmation ─────────────────────────────
         if (action.requiresConfirmation) {
+            AuraLogger.log(TAG_GUARD, "CHECK $toolName → CONFIRM (self-declared)")
             return GuardDecision.RequireConfirmation(
                 "Aura wants to ${action.tool.humanName()}. Authorize?"
-            ).also { Timber.i("Guard CONFIRM ${action.tool}: self-declared") }
+            )
         }
 
-        Timber.d("Guard ALLOWED ${action.tool}")
-        return GuardDecision.Allow
+        AuraLogger.log(TAG_GUARD, "CHECK $toolName → ALLOWED")
+        return GuardDecision.Allow()
     }
 
     private fun isQuietHour(rules: UserRules): Boolean {
@@ -94,7 +112,7 @@ class ActionGuard @Inject constructor() {
 
 sealed interface GuardDecision {
     /** Action is safe to execute immediately. */
-    data object Allow : GuardDecision
+    data class Allow(val reason: String = "") : GuardDecision
 
     /** Action violates a hard rule — do not execute, report reason to user. */
     data class Block(val reason: String) : GuardDecision

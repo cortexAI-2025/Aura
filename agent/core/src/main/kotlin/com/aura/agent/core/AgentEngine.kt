@@ -6,6 +6,8 @@ import com.aura.agent.actions.GuardDecision
 import com.aura.agent.memory.MemoryManager
 import com.aura.ai.engine.LLMEngine
 import com.aura.ai.engine.PromptBuilder
+import com.aura.core.common.AuraLogger
+import com.aura.core.common.AuraLogger.TAG_REACT
 import com.aura.core.domain.model.*
 import com.aura.core.domain.repository.ConversationRepository
 import com.aura.core.domain.repository.GoalRepository
@@ -78,7 +80,6 @@ class AgentEngine @Inject constructor(
 
         while (stepCount < MAX_STEPS && finalAnswer == null) {
             stepCount++
-            Timber.d("Agent step $stepCount/$MAX_STEPS")
 
             // Stream tokens from the LLM
             val responseBuilder = StringBuilder()
@@ -87,11 +88,13 @@ class AgentEngine @Inject constructor(
                 emit(AgentEvent.Token(token.text))
             }
             val rawResponse = responseBuilder.toString().trim()
-            Timber.d("LLM raw response: $rawResponse")
 
             // Parse the structured JSON response
             val step = responseParser.parse(rawResponse)
             emit(AgentEvent.Step(step))
+
+            // Always log the thought as REASON
+            AuraLogger.log(TAG_REACT, "STEP $stepCount → REASON: \"${step.thought}\"")
 
             if (step.isFinal || step.finalAnswer != null) {
                 finalAnswer = step.finalAnswer ?: rawResponse
@@ -103,6 +106,10 @@ class AgentEngine @Inject constructor(
                 finalAnswer = rawResponse
                 break
             }
+
+            // Log the action before executing
+            val paramsStr = action.params.entries.joinToString(", ") { "${it.key}=${it.value}" }
+            AuraLogger.log(TAG_REACT, "STEP $stepCount → ACT: ${action.tool.displayName()}{$paramsStr}")
 
             // Run through the safety sandbox before executing
             when (val decision = actionGuard.evaluate(action, userRules)) {
@@ -119,7 +126,7 @@ class AgentEngine @Inject constructor(
                     emit(AgentEvent.ConfirmationRequired(action))
                     return@flow
                 }
-                GuardDecision.Allow -> Unit
+                is GuardDecision.Allow -> Unit
             }
 
             // Execute the action

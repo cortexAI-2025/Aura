@@ -1,59 +1,25 @@
 package com.aura.agent.core
 
+import com.aura.core.common.AuraLogger
+import com.aura.core.common.AuraLogger.TAG_QUEUE
+import com.aura.core.domain.model.AgentTask
+import com.aura.core.domain.model.TaskPriority
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
-import java.time.Duration
-import java.time.Instant
 import java.util.PriorityQueue
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
-
-// ─── Domain types ─────────────────────────────────────────────────────────────
-
-enum class TaskPriority(val weight: Int) {
-    /** Deadline < 2 h — preempts any currently running task. */
-    CRITICAL(0),
-    HIGH(1),
-    NORMAL(2),
-    LOW(3),
-    BACKGROUND(4),
-}
-
-enum class TaskSource { USER_MESSAGE, PROACTIVE_TRIGGER, BACKGROUND_SYNC }
-
-data class AgentTask(
-    val id: String = UUID.randomUUID().toString(),
-    val payload: String,
-    val priority: TaskPriority = TaskPriority.NORMAL,
-    val deadline: Instant? = null,
-    val source: TaskSource = TaskSource.USER_MESSAGE,
-    val createdAt: Instant = Instant.now(),
-) {
-    /**
-     * Effective priority: auto-upgrade to CRITICAL if deadline is within 2 h,
-     * regardless of the declared priority.
-     */
-    fun effectivePriority(): TaskPriority {
-        if (deadline != null && Duration.between(Instant.now(), deadline).toHours() < 2) {
-            return TaskPriority.CRITICAL
-        }
-        return priority
-    }
-}
 
 data class QueueSnapshot(
     val queueSize: Int,
     val isProcessing: Boolean,
     val currentTaskId: String?,
 )
-
-// ─── TaskQueue ────────────────────────────────────────────────────────────────
 
 /**
  * Priority task queue with single-consumer guarantee and CRITICAL preemption.
@@ -92,7 +58,7 @@ class TaskQueue @Inject constructor() {
     /** Enqueue a task. Returns immediately; processing is asynchronous. */
     fun enqueue(task: AgentTask) {
         incoming.trySend(task)
-            .also { Timber.d("TaskQueue enqueued [${task.effectivePriority()}] ${task.id}: ${task.payload.take(60)}") }
+        Timber.d("TaskQueue enqueued [${task.effectivePriority()}] ${task.id}: ${task.payload.take(60)}")
     }
 
     /**
@@ -108,7 +74,6 @@ class TaskQueue @Inject constructor() {
             for (task in incoming) {
                 heap.add(task)
                 publishSnapshot()
-                Timber.d("TaskQueue heap size: ${heap.size}")
             }
         }
 
@@ -120,7 +85,7 @@ class TaskQueue @Inject constructor() {
                 continue
             }
 
-            Timber.i("TaskQueue processing [${task.effectivePriority()}] ${task.id}")
+            AuraLogger.log(TAG_QUEUE, "START id=${task.id}")
             currentTaskRef.set(task)
             publishSnapshot(isProcessing = true, currentTaskId = task.id)
 
@@ -152,6 +117,7 @@ class TaskQueue @Inject constructor() {
             }
             job.join()
 
+            AuraLogger.log(TAG_QUEUE, "COMPLETE id=${task.id}")
             currentTaskRef.set(null)
             currentJob.set(null)
             publishSnapshot(isProcessing = false, currentTaskId = null)

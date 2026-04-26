@@ -39,6 +39,27 @@ enum class ToolType {
     UNKNOWN,
 }
 
+/** Short CamelCase name used in structured log lines (e.g. [Tool] CalendarCheck → OBS). */
+fun ToolType.displayName(): String = when (this) {
+    ToolType.CALENDAR_READ    -> "CalendarCheck"
+    ToolType.CALENDAR_WRITE   -> "CalendarWrite"
+    ToolType.MESSAGE_SEND     -> "MessageSend"
+    ToolType.MESSAGE_READ     -> "MessageRead"
+    ToolType.WEB_SEARCH       -> "WebSearch"
+    ToolType.WEB_BROWSE       -> "WebBrowse"
+    ToolType.NOTIFICATION_SEND -> "NotificationSend"
+    ToolType.PHONE_CALL       -> "PhoneCall"
+    ToolType.APP_OPEN         -> "AppOpen"
+    ToolType.SCREEN_READ      -> "ScreenRead"
+    ToolType.REMINDER_SET     -> "ReminderSet"
+    ToolType.CONTACT_LOOKUP   -> "ContactLookup"
+    ToolType.SETTINGS_READ    -> "SettingsRead"
+    ToolType.MEMORY_STORE     -> "MemoryStore"
+    ToolType.MEMORY_RETRIEVE  -> "MemoryRetrieve"
+    ToolType.GOAL_UPDATE      -> "GoalUpdate"
+    ToolType.UNKNOWN          -> "Unknown"
+}
+
 /** Result of an agent action execution. */
 data class ActionResult(
     val actionId: String,
@@ -69,6 +90,11 @@ data class BudgetRule(
 data class UserRules(
     val budget: BudgetRule? = null,
     val allowedTools: Set<ToolType> = ToolType.entries.toSet(),
+    /**
+     * Contacts pre-approved for autonomous messaging without confirmation.
+     * Empty set means Aura always asks before sending to any recipient.
+     */
+    val allowedContacts: Set<String> = emptySet(),
     val requireConfirmationForSend: Boolean = true,
     val quietHoursStart: Int = 22,
     val quietHoursEnd: Int = 8,

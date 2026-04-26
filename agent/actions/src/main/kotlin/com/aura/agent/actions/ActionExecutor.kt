@@ -1,8 +1,11 @@
 package com.aura.agent.actions
 
+import com.aura.core.common.AuraLogger
+import com.aura.core.common.AuraLogger.TAG_TOOL
 import com.aura.core.domain.model.ActionResult
 import com.aura.core.domain.model.AgentAction
 import com.aura.core.domain.model.ToolType
+import com.aura.core.domain.model.displayName
 import timber.log.Timber
 import java.time.Instant
 import javax.inject.Inject
@@ -20,18 +23,23 @@ class ActionExecutor @Inject constructor(
     private val handlers: Map<ToolType, @JvmSuppressWildcards ToolHandler>,
 ) {
     suspend fun execute(action: AgentAction): ActionResult {
-        Timber.i("Executing action: ${action.tool} params=${action.params}")
+        val toolName = action.tool.displayName()
         val handler = handlers[action.tool]
         return if (handler == null) {
             Timber.w("No handler for tool ${action.tool}")
-            ActionResult(action.id, action.tool, false, "Tool '${action.tool}' not available on this device.")
+            val output = "Tool '${action.tool}' not available on this device."
+            AuraLogger.log(TAG_TOOL, "$toolName → OBS: \"$output\"")
+            ActionResult(action.id, action.tool, false, output)
         } else {
             try {
                 val output = handler.execute(action.params)
+                AuraLogger.log(TAG_TOOL, "$toolName → OBS: \"$output\"")
                 ActionResult(action.id, action.tool, true, output)
             } catch (e: Exception) {
                 Timber.e(e, "Action ${action.tool} failed")
-                ActionResult(action.id, action.tool, false, "Error: ${e.message}")
+                val output = "Error: ${e.message}"
+                AuraLogger.log(TAG_TOOL, "$toolName → OBS: \"$output\"")
+                ActionResult(action.id, action.tool, false, output)
             }
         }
     }

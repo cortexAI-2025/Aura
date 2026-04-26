@@ -30,4 +30,7 @@ abstract class ActionModule {
 
     @Binds @IntoMap @EnumKey(ToolType.SCREEN_READ)
     abstract fun bindScreenRead(impl: ScreenReadHandler): ToolHandler
+
+    @Binds @IntoMap @EnumKey(ToolType.MESSAGE_SEND)
+    abstract fun bindMessageSend(impl: MessageSendHandler): ToolHandler
 }

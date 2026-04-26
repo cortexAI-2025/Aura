@@ -2,10 +2,13 @@ package com.aura.agent.core
 
 import app.cash.turbine.test
 import com.aura.agent.actions.ActionExecutor
+import com.aura.agent.actions.ActionGuard
 import com.aura.agent.memory.MemoryManager
 import com.aura.ai.engine.LLMEngine
 import com.aura.ai.engine.LLMToken
 import com.aura.ai.engine.PromptBuilder
+import com.aura.core.common.AuraLogDelegate
+import com.aura.core.common.AuraLogger
 import com.aura.core.domain.model.*
 import com.aura.core.domain.repository.ConversationRepository
 import com.aura.core.domain.repository.GoalRepository
@@ -14,6 +17,7 @@ import com.aura.core.domain.usecase.RetrieveContextUseCase
 import io.mockk.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -41,11 +45,29 @@ class AgentEngineTest {
         responseParser = LLMResponseParser()
         userRulesStore = mockk()
 
+        // Silence AuraLogger during unit tests
+        AuraLogger.delegate = object : AuraLogDelegate {
+            override fun log(tag: String, message: String) {}
+        }
+
         agentEngine = AgentEngine(
-            llmEngine, memoryManager, actionExecutor, promptBuilder,
-            conversationRepository, goalRepository, retrieveContext,
-            responseParser, userRulesStore,
+            llmEngine = llmEngine,
+            memoryManager = memoryManager,
+            actionExecutor = actionExecutor,
+            actionGuard = ActionGuard(),
+            promptBuilder = promptBuilder,
+            conversationRepository = conversationRepository,
+            goalRepository = goalRepository,
+            retrieveContext = retrieveContext,
+            responseParser = responseParser,
+            userRulesStore = userRulesStore,
         )
+    }
+
+    @After fun tearDown() {
+        AuraLogger.delegate = object : AuraLogDelegate {
+            override fun log(tag: String, message: String) {}
+        }
     }
 
     @Test fun `emits error when LLM not ready`() = runTest {
@@ -86,7 +108,9 @@ class AgentEngineTest {
         coEvery { retrieveContext(any(), any()) } returns AgentContext(emptyList(), emptyList())
         coEvery { conversationRepository.getRecentMessages(any()) } returns emptyList()
         coEvery { userRulesStore.getRules() } returns UserRules(autonomyLevel = AutonomyLevel.AUTONOMOUS)
-        coEvery { actionExecutor.execute(any()) } returns ActionResult("id", ToolType.CALENDAR_READ, true, "No events.")
+        coEvery { actionExecutor.execute(any()) } returns ActionResult(
+            "id", ToolType.CALENDAR_READ, true, "No events."
+        )
 
         var callCount = 0
         every { llmEngine.generate(any(), any()) } answers {

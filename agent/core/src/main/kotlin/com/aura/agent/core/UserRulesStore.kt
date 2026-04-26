@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.aura.core.domain.model.AutonomyLevel
 import com.aura.core.domain.model.BudgetRule
+import com.aura.core.domain.model.ToolType
 import com.aura.core.domain.model.UserRules
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,8 @@ class UserRulesStore @Inject constructor(
         val KEY_CONFIRM_SEND = booleanPreferencesKey("confirm_before_send")
         val KEY_QUIET_START = intPreferencesKey("quiet_hours_start")
         val KEY_QUIET_END = intPreferencesKey("quiet_hours_end")
+        // Comma-separated list of pre-approved contact names/numbers
+        val KEY_ALLOWED_CONTACTS = stringPreferencesKey("allowed_contacts")
     }
 
     suspend fun getRules(): UserRules = observeRules().first()
@@ -43,12 +46,20 @@ class UserRulesStore @Inject constructor(
             currency = prefs[KEY_BUDGET_CURRENCY] ?: "EUR",
         ) else null
 
+        val allowedContacts = prefs[KEY_ALLOWED_CONTACTS]
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            ?: emptySet()
+
         UserRules(
             budget = budget,
             requireConfirmationForSend = prefs[KEY_CONFIRM_SEND] ?: true,
             quietHoursStart = prefs[KEY_QUIET_START] ?: 22,
             quietHoursEnd = prefs[KEY_QUIET_END] ?: 8,
             autonomyLevel = autonomy,
+            allowedContacts = allowedContacts,
         )
     }
 
@@ -60,5 +71,8 @@ class UserRulesStore @Inject constructor(
     suspend fun updateConfirmSend(require: Boolean) = ds.edit { it[KEY_CONFIRM_SEND] = require }
     suspend fun updateQuietHours(start: Int, end: Int) = ds.edit {
         it[KEY_QUIET_START] = start; it[KEY_QUIET_END] = end
+    }
+    suspend fun updateAllowedContacts(contacts: Set<String>) = ds.edit {
+        it[KEY_ALLOWED_CONTACTS] = contacts.joinToString(",")
     }
 }

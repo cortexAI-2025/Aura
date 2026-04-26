@@ -1,5 +1,7 @@
 package com.aura.agent.core
 
+import com.aura.core.domain.model.AgentTask
+import com.aura.core.domain.model.TaskPriority
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
