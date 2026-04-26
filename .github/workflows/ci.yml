@@ -49,9 +49,26 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Run unit tests
-        run: ./gradlew test --no-daemon --stacktrace --continue
+        run: |
+          set -o pipefail
+          ./gradlew test --no-daemon --stacktrace --continue \
+            2>&1 | tee build-output.txt; exit ${PIPESTATUS[0]}
         env:
           GRADLE_OPTS: "-Xmx3g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false"
+
+      - name: Print first error from build output
+        if: failure()
+        run: |
+          echo "=== First compilation/test error ==="
+          grep -m 5 -A 10 "error:\|FAILED\|Exception\|e: " build-output.txt || true
+
+      - name: Upload build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: build-output.txt
+          retention-days: 7
 
       - name: Upload test results
         if: always()

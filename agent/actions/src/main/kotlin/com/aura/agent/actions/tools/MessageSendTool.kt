@@ -60,7 +60,7 @@ class MessageSendHandler @Inject constructor(
     @Suppress("DEPRECATION")
     private fun resolveSmsManager(): SmsManager =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            context.getSystemService(SmsManager::class.java)
+            checkNotNull(context.getSystemService(SmsManager::class.java)) { "SmsManager unavailable" }
         } else {
             SmsManager.getDefault()
         }
