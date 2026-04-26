@@ -7,8 +7,11 @@ import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
+import com.aura.core.domain.model.AgentTask
 import com.aura.core.domain.model.Message
 import com.aura.core.domain.model.MessageRole
+import com.aura.core.domain.model.TaskPriority
+import com.aura.core.domain.model.TaskSource
 import com.aura.core.domain.repository.ConversationRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
