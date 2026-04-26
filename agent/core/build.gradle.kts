@@ -34,4 +34,6 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
+    // org.json is bundled with Android but not guaranteed available in JVM unit tests
+    testImplementation("org.json:json:20240303")
 }

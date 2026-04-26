@@ -19,14 +19,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Signing from env vars (set by CI) or local keystore.properties
-    val keystorePath = System.getenv("KEYSTORE_PATH")
+    // Signing from env vars — uses providers.environmentVariable() for
+    // configuration-cache compatibility (System.getenv() is not cache-safe).
+    val keystorePath = providers.environmentVariable("KEYSTORE_PATH").orNull
     val releaseSigningConfig = if (!keystorePath.isNullOrEmpty()) {
         signingConfigs.create("release") {
-            storeFile = file(keystorePath)
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+            storeFile = file(keystorePath!!)
+            storePassword = providers.environmentVariable("KEYSTORE_PASSWORD").orNull
+            keyAlias = providers.environmentVariable("KEY_ALIAS").orNull
+            keyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
         }
     } else null
 
