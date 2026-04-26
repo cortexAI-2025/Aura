@@ -55,14 +55,9 @@ jobs:
             2>&1 | tee build-output.txt
           EXIT=${PIPESTATUS[0]}
           if [ $EXIT -ne 0 ]; then
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "FAILING TASKS AND ROOT CAUSES:"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            # Gradle prints "What went wrong" summaries at the bottom of output
-            grep -A 5 "What went wrong\|Execution failed for task\|^e: \|error: [A-Z]" \
-              build-output.txt | head -60 || true
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "=== LAST 120 LINES OF BUILD OUTPUT ==="
+            tail -120 build-output.txt
+            echo "=== END ==="
           fi
           exit $EXIT
         env:
