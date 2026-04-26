@@ -17,6 +17,7 @@ android {
 }
 
 dependencies {
+    api(platform(libs.compose.bom))
     api(libs.bundles.compose)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)

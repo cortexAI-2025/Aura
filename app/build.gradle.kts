@@ -71,6 +71,7 @@ dependencies {
     implementation(project(":feature:goals"))
 
     implementation(libs.core.ktx)
+    implementation(platform(libs.compose.bom))
     implementation(libs.bundles.compose)
     implementation(libs.navigation.compose)
     implementation(libs.hilt.navigation.compose)
