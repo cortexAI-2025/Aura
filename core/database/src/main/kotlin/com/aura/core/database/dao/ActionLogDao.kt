@@ -10,5 +10,5 @@ interface ActionLogDao {
     suspend fun insert(log: ActionLogEntity)
 
     @Query("SELECT * FROM action_log ORDER BY timestampMs DESC LIMIT :limit")
-    fun observeRecent(limit: Int = 100): Flow<List<ActionLogEntity>>
+    fun observeRecent(limit: Int): Flow<List<ActionLogEntity>>
 }

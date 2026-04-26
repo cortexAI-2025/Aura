@@ -14,7 +14,7 @@ interface MemoryDao {
 
     /** Fetch all memories for in-memory cosine search — use sparingly (paginate for large corpora). */
     @Query("SELECT * FROM memories WHERE (:type IS NULL OR type = :type) ORDER BY importance DESC LIMIT :limit")
-    suspend fun getAll(type: String? = null, limit: Int = 5000): List<MemoryEntity>
+    suspend fun getAll(type: String?, limit: Int): List<MemoryEntity>
 
     @Query("SELECT * FROM memories ORDER BY importance DESC")
     fun observeAll(): Flow<List<MemoryEntity>>

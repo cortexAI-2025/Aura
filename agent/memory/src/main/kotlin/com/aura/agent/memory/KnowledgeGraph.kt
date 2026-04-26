@@ -31,7 +31,8 @@ class KnowledgeGraph @Inject constructor(
         knowledgeDao.insertEdge(KnowledgeEdgeEntity(edge.fromId, edge.toId, edge.relation, edge.weight))
 
     suspend fun getNeighbors(nodeId: String, relation: String? = null): List<KnowledgeNode> =
-        knowledgeDao.getNeighbors(nodeId, relation).map { it.toDomain() }
+        (if (relation == null) knowledgeDao.getNeighbors(nodeId)
+        else knowledgeDao.getNeighborsByRelation(nodeId, relation)).map { it.toDomain() }
 
     suspend fun search(query: String): List<KnowledgeNode> =
         knowledgeDao.searchNodes(query).map { it.toDomain() }

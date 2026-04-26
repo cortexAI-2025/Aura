@@ -10,10 +10,10 @@ interface MessageDao {
     suspend fun insert(message: MessageEntity)
 
     @Query("SELECT * FROM messages ORDER BY timestampMs DESC LIMIT :limit")
-    fun observeRecent(limit: Int = 50): Flow<List<MessageEntity>>
+    fun observeRecent(limit: Int): Flow<List<MessageEntity>>
 
     @Query("SELECT * FROM messages ORDER BY timestampMs DESC LIMIT :limit")
-    suspend fun getRecent(limit: Int = 20): List<MessageEntity>
+    suspend fun getRecent(limit: Int): List<MessageEntity>
 
     @Query("DELETE FROM messages")
     suspend fun clear()
