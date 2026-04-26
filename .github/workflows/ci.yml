@@ -52,15 +52,19 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew test --no-daemon --stacktrace --continue \
-            2>&1 | tee build-output.txt; exit ${PIPESTATUS[0]}
+            2>&1 | tee build-output.txt
+          EXIT=${PIPESTATUS[0]}
+          if [ $EXIT -ne 0 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "FIRST COMPILER / TEST ERROR:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            grep -m 1 -A 15 "^e: \|error: \|> Task.*FAILED" build-output.txt || true
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          fi
+          exit $EXIT
         env:
           GRADLE_OPTS: "-Xmx3g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false"
-
-      - name: Print first error from build output
-        if: failure()
-        run: |
-          echo "=== First compilation/test error ==="
-          grep -m 5 -A 10 "error:\|FAILED\|Exception\|e: " build-output.txt || true
 
       - name: Upload build output on failure
         if: failure()

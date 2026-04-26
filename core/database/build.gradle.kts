@@ -16,6 +16,11 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
+// Room 2.6+ with KSP requires an explicit schema export location when exportSchema = true.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(project(":core:common"))
     api(libs.bundles.room)
