@@ -19,11 +19,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Signing from env vars (set by CI) or local keystore.properties
+    val keystorePath = System.getenv("KEYSTORE_PATH")
+    val releaseSigningConfig = if (!keystorePath.isNullOrEmpty()) {
+        signingConfigs.create("release") {
+            storeFile = file(keystorePath)
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
+        }
+    } else null
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            releaseSigningConfig?.let { signingConfig = it }
         }
         debug {
             isDebuggable = true
