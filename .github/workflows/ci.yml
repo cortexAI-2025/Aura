@@ -55,8 +55,14 @@ jobs:
             2>&1 | tee build-output.txt
           EXIT=${PIPESTATUS[0]}
           if [ $EXIT -ne 0 ]; then
-            echo "=== LAST 120 LINES OF BUILD OUTPUT ==="
-            tail -120 build-output.txt
+            echo "=== GRADLE FAILURE SUMMARY ==="
+            # Extract every "What went wrong" block (task name + root cause)
+            grep -n "What went wrong\|Execution failed for task\|Caused by:\|error: \|> " build-output.txt \
+              | grep -v "^Binary\|try:\|Exception is\|FutureTask\|ThreadPool\|Conditional" \
+              | head -80 || true
+            echo ""
+            echo "=== LAST 60 LINES ==="
+            tail -60 build-output.txt
             echo "=== END ==="
           fi
           exit $EXIT
