@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 
-fun <T> Flow<T>.asAuraResult(): Flow<AuraResult<T>> = map<T, AuraResult<T>> { AuraResult.Success(it) }
+fun <T> Flow<T>.asAuraResult(): Flow<AuraResult<T>> = map { AuraResult.Success(it) }
     .onStart { emit(AuraResult.Loading) }
     .catch { emit(AuraResult.Error(it)) }
 
