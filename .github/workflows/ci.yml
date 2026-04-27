@@ -17,12 +17,24 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# ── Shared env ────────────────────────────────────────────────────────────────
+env:
+  GRADLE_OPTS: >-
+    -Xmx4g
+    -Dorg.gradle.daemon=false
+    -Dorg.gradle.configuration-cache=false
+    -Dkotlin.incremental=false
+
+# ── Reusable setup steps (via composite action alternative: just repeat) ──────
+# Each job repeats checkout + JDK + SDK + cache + gradlew; kept explicit so
+# each job is independently reproducible without shared runner state.
+
 jobs:
-  # ── Unit tests ─────────────────────────────────────────────────────────────
+  # ── Unit tests ───────────────────────────────────────────────────────────────
   test:
     name: Unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -34,8 +46,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # NOTE: configuration-cache is intentionally excluded from the cache
-      # path — it stores absolute paths and becomes stale across CI runs.
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -48,36 +58,19 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Run unit tests
+      - name: Write local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Install Android SDK platform 35
         run: |
-          set -o pipefail
-          ./gradlew test --no-daemon --stacktrace --continue \
-            2>&1 | tee build-output.txt
-          EXIT=${PIPESTATUS[0]}
-          if [ $EXIT -ne 0 ]; then
-            echo "=== GRADLE FAILURE SUMMARY ==="
-            # Extract every "What went wrong" block (task name + root cause)
-            grep -n "What went wrong\|Execution failed for task\|Caused by:\|error: \|> " build-output.txt \
-              | grep -v "^Binary\|try:\|Exception is\|FutureTask\|ThreadPool\|Conditional" \
-              | head -80 || true
-            echo ""
-            echo "=== LAST 60 LINES ==="
-            tail -60 build-output.txt
-            echo "=== END ==="
-          fi
-          exit $EXIT
-        env:
-          GRADLE_OPTS: "-Xmx3g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" 2>&1 | tail -5 || true
 
-      - name: Upload build output on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: build-output.txt
-          retention-days: 7
+      - name: Run unit tests
+        run: ./gradlew test --no-daemon --stacktrace --continue
 
-      - name: Upload test results
+      - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -85,7 +78,16 @@ jobs:
           path: '**/build/reports/tests/'
           retention-days: 7
 
-  # ── Lint ──────────────────────────────────────────────────────────────────
+      - name: Upload build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: build-output.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ── Lint ─────────────────────────────────────────────────────────────────────
   lint:
     name: Android lint
     runs-on: ubuntu-latest
@@ -113,10 +115,17 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Write local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Install Android SDK platform 35
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" 2>&1 | tail -5 || true
+
       - name: Run lint
         run: ./gradlew lint --no-daemon --stacktrace --continue
-        env:
-          GRADLE_OPTS: "-Xmx3g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false"
 
       - name: Upload lint reports
         if: always()
@@ -126,7 +135,7 @@ jobs:
           path: '**/build/reports/lint-results*.html'
           retention-days: 7
 
-  # ── Debug APK ─────────────────────────────────────────────────────────────
+  # ── Debug APK ─────────────────────────────────────────────────────────────────
   build-debug:
     name: Build debug APK
     runs-on: ubuntu-latest
@@ -155,10 +164,17 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Write local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Install Android SDK platform 35
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" 2>&1 | tail -5 || true
+
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
-        env:
-          GRADLE_OPTS: "-Xmx3g -Dorg.gradle.daemon=false -Dorg.gradle.configuration-cache=false"
 
       - name: Rename APK
         run: |
