@@ -15,6 +15,7 @@ internal sealed interface SseEvent {
 /** Pure (Android-free) helpers for the OpenRouter chat-completions protocol. */
 internal object OpenRouterProtocol {
     const val ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+    const val MODELS_ENDPOINT = "https://openrouter.ai/api/v1/models"
 
     private val TURN = Regex("<start_of_turn>(user|model)\\n(.*?)(?:<end_of_turn>|\\z)", RegexOption.DOT_MATCHES_ALL)
 
@@ -63,6 +64,36 @@ internal object OpenRouterProtocol {
         val text = delta.optString("content", "")
         return if (text.isEmpty()) SseEvent.Ignore else SseEvent.Delta(text)
     }
+
+    /**
+     * Free text models from the public `/models` payload: both prices are zero, text in/out only,
+     * no safety/guard models, not already expired. Sorted by name.
+     */
+    fun parseFreeModels(json: String, today: String = java.time.LocalDate.now().toString()): List<OpenRouterModel> {
+        val data = JSONObject(json).optJSONArray("data") ?: return emptyList()
+        val out = ArrayList<OpenRouterModel>()
+        for (i in 0 until data.length()) {
+            val m = data.optJSONObject(i) ?: continue
+            val id = m.optString("id", "")
+            if (id.isEmpty()) continue
+            val pricing = m.optJSONObject("pricing") ?: continue
+            if (pricing.optString("prompt", "").toDoubleOrNull() != 0.0 ||
+                pricing.optString("completion", "").toDoubleOrNull() != 0.0) continue
+            val arch = m.optJSONObject("architecture")
+            val outputs = strings(arch?.optJSONArray("output_modalities") ?: m.optJSONArray("output_modalities"))
+            val inputs = strings(arch?.optJSONArray("input_modalities") ?: m.optJSONArray("input_modalities"))
+            if (outputs.isNotEmpty() && outputs != listOf("text")) continue
+            if (inputs.isNotEmpty() && "text" !in inputs) continue
+            val lower = id.lowercase()
+            if ("safety" in lower || "guard" in lower) continue
+            val expires = if (m.isNull("expiration_date")) null else m.optString("expiration_date").takeIf { it.isNotBlank() }
+            if (expires != null && expires <= today) continue
+            out += OpenRouterModel(id, m.optString("name", id), m.optInt("context_length", 0), expires)
+        }
+        return out.sortedBy { it.name.lowercase() }
+    }
+
+    private fun strings(a: JSONArray?): List<String> = if (a == null) emptyList() else List(a.length()) { a.optString(it) }
 
     /** Human-readable error; never includes the API key. */
     fun describeHttpError(code: Int, body: String): String {

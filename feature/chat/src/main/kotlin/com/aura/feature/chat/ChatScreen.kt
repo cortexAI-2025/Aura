@@ -8,6 +8,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.aura.ai.engine.OpenRouterModel
 import com.aura.core.ui.component.AuraStatusChip
 import com.aura.core.ui.component.AuraThinkingIndicator
 import com.aura.core.ui.theme.*
@@ -52,6 +55,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         if (result.resultCode == Activity.RESULT_OK) {
             val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spoken.isNullOrBlank()) viewModel.onVoiceResult(spoken)
+        } else {
+            viewModel.onVoiceFailed(result.resultCode)
         }
     }
     val startVoice = {
@@ -67,11 +72,17 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         }
     }
 
+    LaunchedEffect(showSettings) { if (showSettings) viewModel.loadFreeModels() }
+
     if (showSettings) {
         CloudSettingsDialog(
             enabled = state.cloudEnabled,
             model = state.cloudModel,
             hasKey = state.hasApiKey,
+            freeModels = state.freeModels,
+            modelsLoading = state.modelsLoading,
+            modelsError = state.modelsError,
+            onRefreshModels = viewModel::loadFreeModels,
             onDismiss = { showSettings = false },
             onSave = { enabled, key, model ->
                 viewModel.saveCloudSettings(enabled, key, model)
@@ -208,18 +219,26 @@ private fun CloudSettingsDialog(
     enabled: Boolean,
     model: String,
     hasKey: Boolean,
+    freeModels: List<OpenRouterModel>,
+    modelsLoading: Boolean,
+    modelsError: String?,
+    onRefreshModels: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (enabled: Boolean, apiKey: String, model: String) -> Unit,
 ) {
     var useCloud by remember { mutableStateOf(enabled) }
     var key by remember { mutableStateOf("") }
     var modelId by remember { mutableStateOf(model) }
+    var menuOpen by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AuraSurface,
         title = { Text("IA cloud (OpenRouter)") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -236,13 +255,53 @@ private fun CloudSettingsDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                Text("Modèle", style = MaterialTheme.typography.labelLarge, color = AuraOnSurfaceDim)
+                Box {
+                    OutlinedButton(onClick = { menuOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            (freeModels.firstOrNull { it.id == modelId }?.name ?: "Choisir un modèle gratuit") + "  ▾",
+                            maxLines = 1,
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        freeModels.forEach { m ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(m.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            m.id + (m.expires?.let { " · expire le $it" } ?: ""),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = AuraOnSurfaceDim,
+                                        )
+                                    }
+                                },
+                                onClick = { modelId = m.id; menuOpen = false },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = modelId,
                     onValueChange = { modelId = it },
-                    label = { Text("Modèle (ex. google/gemma-4-31b-it:free)") },
+                    label = { Text("ou saisir un identifiant de modèle") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onRefreshModels, enabled = !modelsLoading) { Text("↻ Actualiser la liste") }
+                    Text(
+                        when {
+                            modelsLoading -> "Chargement…"
+                            modelsError != null -> modelsError
+                            else -> "${freeModels.size} modèles gratuits"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AuraOnSurfaceDim,
+                    )
+                }
+
                 Text(
                     "Attention : en mode cloud, vos messages et des extraits de votre mémoire sont envoyés à " +
                         "OpenRouter. Désactivé, tout reste sur l'appareil. La clé est stockée chiffrée.",

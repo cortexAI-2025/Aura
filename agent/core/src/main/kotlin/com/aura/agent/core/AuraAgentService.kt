@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.time.Instant
 import java.util.UUID
@@ -46,6 +47,8 @@ class AuraAgentService : LifecycleService() {
         const val EXTRA_PRIORITY = "extra_priority"
         const val EXTRA_DEADLINE_MS = "extra_deadline_ms"
         const val CHANNEL_ID = "aura_service"
+        /** A task that produces no final answer within this time is abandoned so the queue can't jam. */
+        const val TASK_TIMEOUT_MS = 300_000L
 
         private val _agentEvents = MutableSharedFlow<AgentEvent>(extraBufferCapacity = 64)
         val agentEvents: SharedFlow<AgentEvent> = _agentEvents
@@ -135,13 +138,19 @@ class AuraAgentService : LifecycleService() {
             Message(UUID.randomUUID().toString(), MessageRole.USER, task.payload, Instant.now())
         )
 
-        agentEngine.process(task.payload).collect { event ->
-            _agentEvents.emit(event)
-            if (event is AgentEvent.FinalAnswer) {
-                conversationRepository.addMessage(
-                    Message(UUID.randomUUID().toString(), MessageRole.ASSISTANT, event.text, Instant.now())
-                )
+        val finished = withTimeoutOrNull(TASK_TIMEOUT_MS) {
+            agentEngine.process(task.payload).collect { event ->
+                _agentEvents.emit(event)
+                if (event is AgentEvent.FinalAnswer) {
+                    conversationRepository.addMessage(
+                        Message(UUID.randomUUID().toString(), MessageRole.ASSISTANT, event.text, Instant.now())
+                    )
+                }
             }
+            true
+        }
+        if (finished == null) {
+            _agentEvents.emit(AgentEvent.Error("Délai dépassé : aucune réponse du modèle après ${TASK_TIMEOUT_MS / 60_000} minutes."))
         }
     }
 

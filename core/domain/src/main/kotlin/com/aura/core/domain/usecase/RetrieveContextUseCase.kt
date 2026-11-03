@@ -6,6 +6,7 @@ import com.aura.core.domain.repository.GoalRepository
 import com.aura.core.domain.repository.MemoryRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 data class AgentContext(
@@ -20,11 +21,9 @@ class RetrieveContextUseCase @Inject constructor(
     suspend operator fun invoke(queryEmbedding: FloatArray, topK: Int = 8): AgentContext =
         coroutineScope {
             val memoriesDeferred = async { memoryRepository.search(queryEmbedding, topK) }
-            val goalsDeferred = async {
-                val allGoals = mutableListOf<Goal>()
-                goalRepository.observeActive().collect { allGoals.addAll(it) }
-                allGoals.take(5)
-            }
+            // observeActive() is a Room Flow that never completes: take ONE snapshot.
+            // (collect{} here suspended forever and froze the whole agent loop.)
+            val goalsDeferred = async { goalRepository.observeActive().first().take(5) }
             AgentContext(memoriesDeferred.await(), goalsDeferred.await())
         }
 }

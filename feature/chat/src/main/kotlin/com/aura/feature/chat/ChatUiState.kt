@@ -1,5 +1,7 @@
 package com.aura.feature.chat
 
+import com.aura.ai.engine.OpenRouterCatalog
+import com.aura.ai.engine.OpenRouterModel
 import com.aura.core.domain.model.AgentAction
 import com.aura.core.domain.model.Message
 
@@ -15,6 +17,9 @@ data class ChatUiState(
     val cloudModel: String = "",
     val hasApiKey: Boolean = false,
     val speakReplies: Boolean = false,
+    val freeModels: List<OpenRouterModel> = OpenRouterCatalog.FALLBACK,
+    val modelsLoading: Boolean = false,
+    val modelsError: String? = null,
 )
 
 sealed interface ChatMessage {
