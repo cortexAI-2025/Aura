@@ -13,7 +13,7 @@ android {
         // Keep TFLite model files from being compressed — required for mmap
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
-    aaptOptions { noCompress += listOf("tflite") }
+    androidResources { noCompress += listOf("tflite") }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

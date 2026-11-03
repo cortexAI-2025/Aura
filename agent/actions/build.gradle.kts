@@ -23,6 +23,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.coroutines.android)
     implementation(libs.timber)
+    implementation(libs.core.ktx)
     implementation(libs.lifecycle.service)
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

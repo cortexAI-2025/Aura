@@ -91,7 +91,7 @@ private fun GoalCard(goal: Goal, onProgressUpdate: (Float) -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AddGoalSheet(onDismiss: () -> Unit, onAdd: (String, String, GoalCategory) -> Unit) {
     var title by remember { mutableStateOf("") }

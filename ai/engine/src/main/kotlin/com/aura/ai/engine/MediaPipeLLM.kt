@@ -7,14 +7,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * On-device LLM inference via MediaPipe Tasks GenAI.
@@ -34,6 +32,13 @@ class MediaPipeLLM @Inject constructor(
     private var llmInference: LlmInference? = null
     override val isReady: Boolean get() = llmInference != null
 
+    /**
+     * MediaPipe 0.10.x registers the streaming result listener at creation time
+     * (LlmInferenceOptions.setResultListener), not per call. We route it to the
+     * listener of the single in-flight generation.
+     */
+    @Volatile private var activeListener: ((String, Boolean) -> Unit)? = null
+
     override suspend fun load(modelPath: String) {
         require(File(modelPath).exists()) {
             "Model not found at $modelPath. Download Gemma-2B from Kaggle and copy to device."
@@ -42,36 +47,28 @@ class MediaPipeLLM @Inject constructor(
         val options = LlmInferenceOptions.builder()
             .setModelPath(modelPath)
             .setMaxTokens(2048)
-            // Prefer GPU/NPU — falls back to CPU automatically on unsupported hardware
-            .setPreferredBackend(LlmInferenceOptions.Backend.GPU)
+            .setResultListener { partial, done -> activeListener?.invoke(partial ?: "", done) }
             .build()
         llmInference = LlmInference.createFromOptions(context, options)
         Timber.i("LLM ready")
     }
 
     /**
-     * Stream generation using MediaPipe's async callback.
-     * Each [LLMToken] carries the incremental text delta.
+     * Stream generation. Each [LLMToken] carries the incremental text delta.
      */
     override fun generate(prompt: String, maxTokens: Int): Flow<LLMToken> = callbackFlow {
         val engine = checkNotNull(llmInference) { "Call load() before generate()" }
-        engine.generateResponseAsync(prompt) { partialResult, done ->
-            val token = LLMToken(partialResult ?: "", done)
-            trySend(token)
+        activeListener = { partial, done ->
+            trySend(LLMToken(partial, done))
             if (done) close()
         }
-        awaitClose { /* MediaPipe manages its own lifecycle */ }
+        engine.generateResponseAsync(prompt)
+        awaitClose { activeListener = null }
     }
 
     override suspend fun generateFull(prompt: String, maxTokens: Int): String {
         val engine = checkNotNull(llmInference) { "Call load() before generateFull()" }
-        return suspendCancellableCoroutine { cont ->
-            val sb = StringBuilder()
-            engine.generateResponseAsync(prompt) { partial, done ->
-                if (partial != null) sb.append(partial)
-                if (done) cont.resume(sb.toString())
-            }
-        }
+        return withContext(Dispatchers.Default) { engine.generateResponse(prompt) }
     }
 
     override suspend fun embed(text: String): FloatArray = embeddingEngine.embed(text)
