@@ -116,9 +116,8 @@ class AuraAgentIntegrationTest {
             coEvery { getRecentMessages(any()) } returns emptyList()
         }
         val goalRepo = mockk<GoalRepository>(relaxed = true)
-        val retrieveContext = mockk<RetrieveContextUseCase> {
-            coEvery { invoke(any(), any()) } returns AgentContext(emptyList(), emptyList())
-        }
+        val retrieveContext = mockk<RetrieveContextUseCase>()
+        coEvery { retrieveContext(any(), any()) } returns AgentContext(emptyList(), emptyList())
         val userRulesStore = mockk<UserRulesStore> {
             coEvery { getRules() } returns testRules
         }
