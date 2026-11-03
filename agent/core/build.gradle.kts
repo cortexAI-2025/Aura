@@ -26,7 +26,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.coroutines.android)
-    implementation(libs.lifecycle.service)
+    api(libs.lifecycle.service)
     implementation(libs.lifecycle.process)
     implementation(libs.datastore.preferences)
     implementation(libs.timber)

@@ -12,29 +12,26 @@ class TaskQueueTest {
 
     // ── Ordering ──────────────────────────────────────────────────────────────
 
-    @Test fun `higher priority tasks are processed before lower priority`() = runTest {
+    @Test fun `higher priority tasks are processed before lower priority`() = runBlocking {
         val queue = TaskQueue()
-        val processed = mutableListOf<String>()
+        val processed = java.util.Collections.synchronizedList(mutableListOf<String>())
 
-        val scope = CoroutineScope(Dispatchers.Unconfined + Job())
-        val consumerJob = scope.launch {
-            queue.processTasks(scope) { task ->
-                processed.add(task.payload)
-            }
-        }
-
-        // Enqueue in reverse priority order
+        // Enqueue in reverse priority order BEFORE the consumer starts, so the
+        // drain loop moves all four into the heap before the first poll.
         queue.enqueue(AgentTask(payload = "background", priority = TaskPriority.BACKGROUND))
         queue.enqueue(AgentTask(payload = "low", priority = TaskPriority.LOW))
         queue.enqueue(AgentTask(payload = "normal", priority = TaskPriority.NORMAL))
         queue.enqueue(AgentTask(payload = "high", priority = TaskPriority.HIGH))
 
-        delay(300)  // let the consumer drain
-        consumerJob.cancel()
+        // TaskQueue runs on real dispatchers, so wait in real time (not runTest virtual time).
+        val scope = CoroutineScope(Dispatchers.Default + Job())
+        scope.launch {
+            queue.processTasks(this) { task -> processed.add(task.payload) }
+        }
+        withTimeout(10_000) { while (processed.size < 4) delay(20) }
         scope.cancel()
 
-        // First processed should be the highest priority
-        assertEquals("high", processed.first())
+        assertEquals(listOf("high", "normal", "low", "background"), processed.toList())
     }
 
     // ── Effective priority (deadline-based upgrade) ───────────────────────────
