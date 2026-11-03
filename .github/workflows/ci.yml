@@ -12,6 +12,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -68,7 +69,7 @@ jobs:
             "build-tools;35.0.0" 2>&1 | tail -5 || true
 
       - name: Run unit tests
-        run: ./gradlew test --no-daemon --stacktrace --continue
+        run: ./scripts/gradle-ci.sh test
 
       - name: Upload test reports
         if: always()
@@ -125,7 +126,7 @@ jobs:
             "build-tools;35.0.0" 2>&1 | tail -5 || true
 
       - name: Run lint
-        run: ./gradlew lint --no-daemon --stacktrace --continue
+        run: ./scripts/gradle-ci.sh lint
 
       - name: Upload lint reports
         if: always()
@@ -174,7 +175,7 @@ jobs:
             "build-tools;35.0.0" 2>&1 | tail -5 || true
 
       - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: ./scripts/gradle-ci.sh :app:assembleDebug
 
       - name: Rename APK
         run: |
