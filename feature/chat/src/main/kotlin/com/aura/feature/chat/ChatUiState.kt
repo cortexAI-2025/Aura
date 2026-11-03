@@ -18,6 +18,8 @@ data class ChatUiState(
     val hasApiKey: Boolean = false,
     val autoFallback: Boolean = true,
     val ttsProblem: Boolean = false,
+    val handsFree: HandsFreeState = HandsFreeState.OFF,
+    val partialText: String = "",
     val speakReplies: Boolean = false,
     val freeModels: List<OpenRouterModel> = OpenRouterCatalog.FALLBACK,
     val modelsLoading: Boolean = false,
@@ -32,3 +34,6 @@ sealed interface ChatMessage {
 }
 
 enum class ModelStatusUi { CHECKING, NOT_FOUND, LOADING, READY, ERROR, CLOUD }
+
+/** Hands-free conversation loop: listen → think → speak → listen… */
+enum class HandsFreeState { OFF, LISTENING, THINKING, SPEAKING }

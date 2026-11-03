@@ -5,6 +5,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import android.net.Uri
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.agent.core.*
@@ -48,6 +49,30 @@ class ChatViewModel @Inject constructor(
     @Volatile private var replyAloud = false
     private var pendingSpeech: String? = null
     private var watchdog: Job? = null
+
+    // ── Hands-free ──
+    private var handsFreeRetries = 0
+    private var resumeJob: Job? = null
+    private val voice = VoiceListener(context, object : VoiceListener.Callbacks {
+        override fun onPartial(text: String) {
+            if (_uiState.value.handsFree == HandsFreeState.LISTENING) _uiState.update { it.copy(partialText = text) }
+        }
+
+        override fun onFinal(text: String) {
+            if (_uiState.value.handsFree != HandsFreeState.LISTENING) return
+            handsFreeRetries = 0
+            _uiState.update { it.copy(inputText = text.trim()) }
+            doSend(viaVoice = true)
+        }
+
+        override fun onError(code: Int) {
+            if (_uiState.value.handsFree != HandsFreeState.LISTENING) return
+            when (val outcome = HandsFreePolicy.onRecognizerError(code, handsFreeRetries)) {
+                is ListenOutcome.Restart -> { handsFreeRetries++; scheduleResume(outcome.delayMs) }
+                is ListenOutcome.Stop -> stopHandsFree(outcome.message)
+            }
+        }
+    })
 
     init {
         _uiState.update { it.copy(speakReplies = prefs.getBoolean(KEY_SPEAK, true)) }
@@ -161,8 +186,14 @@ class ChatViewModel @Inject constructor(
         val text = _uiState.value.inputText.trim()
         if (text.isBlank()) return
         replyAloud = viaVoice // a question asked by voice is answered by voice
+        if (_uiState.value.handsFree != HandsFreeState.OFF) { resumeJob?.cancel(); voice.stop() }
         tts?.stop()
-        _uiState.update { it.copy(inputText = "", isThinking = true, streamingText = "", error = null) }
+        _uiState.update {
+            it.copy(
+                inputText = "", isThinking = true, streamingText = "", error = null, partialText = "",
+                handsFree = if (it.handsFree != HandsFreeState.OFF) HandsFreeState.THINKING else HandsFreeState.OFF,
+            )
+        }
         armWatchdog()
         AuraAgentService.processMessage(context, text)
     }
@@ -227,6 +258,8 @@ class ChatViewModel @Inject constructor(
         if (index >= candidates.size) {
             ttsInitializing = false
             ttsFailed = true
+            pendingSpeech = null
+            if (_uiState.value.handsFree == HandsFreeState.SPEAKING) scheduleResume(800)
             val found = if (detected.isEmpty()) "aucun moteur installé" else "moteur détecté : ${detected.joinToString()}"
             val default = runCatching {
                 android.provider.Settings.Secure.getString(context.contentResolver, "tts_default_synth")
@@ -258,6 +291,14 @@ class ChatViewModel @Inject constructor(
     private fun onTtsReady(engine: TextToSpeech) {
         tts = engine
         ttsInitializing = false
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+            override fun onDone(utteranceId: String?) = onSpeechFinished()
+
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) = onSpeechFinished()
+            override fun onError(utteranceId: String?, errorCode: Int) = onSpeechFinished()
+        })
         _uiState.update { it.copy(ttsProblem = false) }
         var r = engine.setLanguage(Locale.getDefault())
         if (r < TextToSpeech.LANG_AVAILABLE) r = engine.setLanguage(Locale.FRENCH)
@@ -279,15 +320,17 @@ class ChatViewModel @Inject constructor(
         speak(text, force = true)
     }
 
-    private fun speak(text: String, force: Boolean = false) {
-        if (!force && !_uiState.value.speakReplies && !replyAloud) return
-        if (!force && ttsFailed) return
+    /** @return true when the reply is (or will be) spoken. */
+    private fun speak(text: String, force: Boolean = false): Boolean {
+        if (!force && !_uiState.value.speakReplies && !replyAloud) return false
+        if (!force && ttsFailed) return false
         val clean = SpeechText.clean(text)
-        if (clean.isEmpty()) return
+        if (clean.isEmpty()) return false
         ensureTts()
         val engine = tts
         if (ttsReady && engine != null) engine.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "aura-reply")
         else pendingSpeech = clean
+        return true
     }
 
     /** Safety net: never leave the UI stuck on \"thinking\" (input and mic stay disabled meanwhile). */
@@ -306,7 +349,64 @@ class ChatViewModel @Inject constructor(
         watchdog = null
     }
 
+    // ── Hands-free API ────────────────────────────────────────────────────────
+
+    /** Call on the main thread, with the microphone permission already granted. */
+    fun startHandsFree() {
+        if (!voice.isAvailable()) { onVoiceUnavailable(); return }
+        handsFreeRetries = 0
+        resumeJob?.cancel()
+        ensureTts() // warm up so the first answer is spoken without delay
+        _uiState.update { it.copy(handsFree = HandsFreeState.LISTENING, partialText = "", error = null) }
+        voice.start()
+    }
+
+    fun stopHandsFree(message: String? = null) {
+        if (_uiState.value.handsFree == HandsFreeState.OFF && message == null) return
+        resumeJob?.cancel()
+        voice.stop()
+        tts?.stop()
+        _uiState.update {
+            it.copy(handsFree = HandsFreeState.OFF, partialText = "", error = message ?: it.error)
+        }
+    }
+
+    /** Cut Aura's speech short and start listening right away. */
+    fun interruptSpeech() {
+        if (_uiState.value.handsFree != HandsFreeState.SPEAKING) return
+        resumeJob?.cancel()
+        beginListening()
+    }
+
+    fun onMicPermissionDenied() {
+        _uiState.update { it.copy(error = "Permission micro refusée : le mode mains libres en a besoin.") }
+    }
+
+    private fun onSpeechFinished() {
+        viewModelScope.launch {
+            // Small pause so the microphone doesn't catch the tail of Aura's own voice.
+            if (_uiState.value.handsFree == HandsFreeState.SPEAKING) scheduleResume(500)
+        }
+    }
+
+    private fun scheduleResume(delayMs: Long) {
+        resumeJob?.cancel()
+        resumeJob = viewModelScope.launch {
+            delay(delayMs)
+            beginListening()
+        }
+    }
+
+    private fun beginListening() {
+        if (_uiState.value.handsFree == HandsFreeState.OFF) return
+        tts?.stop()
+        _uiState.update { it.copy(handsFree = HandsFreeState.LISTENING, partialText = "") }
+        voice.start()
+    }
+
     override fun onCleared() {
+        resumeJob?.cancel()
+        voice.stop()
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -325,15 +425,23 @@ class ChatViewModel @Inject constructor(
             }
             is AgentEvent.ConfirmationRequired -> {
                 disarmWatchdog()
+                if (_uiState.value.handsFree != HandsFreeState.OFF) {
+                    stopHandsFree("Une action demande votre confirmation : appuyez sur Autoriser ou Annuler.")
+                }
                 _uiState.update { it.copy(isThinking = false, pendingAction = event.action) }
             }
             is AgentEvent.FinalAnswer -> {
                 disarmWatchdog()
-                speak(event.text)
+                val willSpeak = speak(event.text)
                 _uiState.update { it.copy(isThinking = false, streamingText = "", error = null) }
+                if (_uiState.value.handsFree != HandsFreeState.OFF) {
+                    if (willSpeak) _uiState.update { it.copy(handsFree = HandsFreeState.SPEAKING) }
+                    else scheduleResume(600) // nothing to say aloud: just keep listening
+                }
             }
             is AgentEvent.Error -> {
                 disarmWatchdog()
+                if (_uiState.value.handsFree != HandsFreeState.OFF) stopHandsFree(event.message)
                 _uiState.update { it.copy(isThinking = false, error = event.message) }
             }
             else -> {}

@@ -1,9 +1,11 @@
 package com.aura.feature.chat
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import android.speech.RecognizerIntent
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HeadsetMic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -34,6 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -49,6 +56,34 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val appContext = LocalContext.current
+
+    // ── Hands-free: permission, keep the screen on, stop when the app leaves the foreground ──
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.startHandsFree() else viewModel.onMicPermissionDenied()
+    }
+    val toggleHandsFree = {
+        when {
+            state.handsFree != HandsFreeState.OFF -> viewModel.stopHandsFree()
+            appContext.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED ->
+                viewModel.startHandsFree()
+            else -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    val handsFreeOn = state.handsFree != HandsFreeState.OFF
+    val view = LocalView.current
+    DisposableEffect(handsFreeOn) {
+        view.keepScreenOn = handsFreeOn
+        onDispose { view.keepScreenOn = false }
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            // Android forbids background microphone capture: stop cleanly instead of failing.
+            if (event == Lifecycle.Event.ON_STOP) viewModel.stopHandsFree()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importModel)
     }
@@ -125,11 +160,21 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                         )
                     }
                 }
+                if (handsFreeOn) {
+                    HandsFreeBanner(
+                        state = state.handsFree,
+                        partial = state.partialText,
+                        onStop = { viewModel.stopHandsFree() },
+                        onInterrupt = viewModel::interruptSpeech,
+                    )
+                }
                 ChatInputBar(
                     text = state.inputText,
                     onTextChange = viewModel::onInputChanged,
                     onSend = viewModel::sendMessage,
                     onMic = startVoice,
+                    handsFreeActive = handsFreeOn,
+                    onToggleHandsFree = toggleHandsFree,
                     enabled = !state.isThinking && state.pendingAction == null,
                 )
             }
@@ -233,6 +278,42 @@ private fun AuraChatTopBar(
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = AuraVoid),
     )
+}
+
+@Composable
+private fun HandsFreeBanner(
+    state: HandsFreeState,
+    partial: String,
+    onStop: () -> Unit,
+    onInterrupt: () -> Unit,
+) {
+    Surface(color = AuraSurfaceVariant, tonalElevation = 4.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    when (state) {
+                        HandsFreeState.LISTENING -> "Je vous écoute…"
+                        HandsFreeState.THINKING -> "Je réfléchis…"
+                        HandsFreeState.SPEAKING -> "Je parle…"
+                        HandsFreeState.OFF -> ""
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AuraOnSurface,
+                )
+                if (state == HandsFreeState.LISTENING && partial.isNotBlank()) {
+                    Text(partial, style = MaterialTheme.typography.bodySmall, color = AuraOnSurfaceDim, maxLines = 2)
+                }
+            }
+            if (state == HandsFreeState.SPEAKING) {
+                OutlinedButton(onClick = onInterrupt) { Text("Interrompre") }
+            }
+            Button(onClick = onStop) { Text("Arrêter") }
+        }
+    }
 }
 
 /** Launch the first intent that some installed app can handle. */
@@ -487,6 +568,8 @@ private fun ChatInputBar(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onMic: () -> Unit,
+    handsFreeActive: Boolean,
+    onToggleHandsFree: () -> Unit,
     enabled: Boolean,
 ) {
     Surface(color = AuraSurface, tonalElevation = 3.dp) {
@@ -512,6 +595,13 @@ private fun ChatInputBar(
                     cursorColor = AuraPulse,
                 ),
             )
+            IconButton(onClick = onToggleHandsFree, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    Icons.Default.HeadsetMic,
+                    contentDescription = if (handsFreeActive) "Arrêter le mode mains libres" else "Mode mains libres",
+                    tint = if (handsFreeActive) AuraSuccess else AuraPulse,
+                )
+            }
             IconButton(onClick = onMic, enabled = enabled, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Mic, contentDescription = "Parler à Aura", tint = if (enabled) AuraPulse else AuraOnSurfaceDim)
             }
