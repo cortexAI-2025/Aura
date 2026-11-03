@@ -26,6 +26,7 @@ class LLMSettings @Inject constructor(
         private const val K_API = "openrouter_api_key"
         private const val K_MODEL = "openrouter_model"
         private const val K_PROVIDER = "provider"
+        private const val K_FALLBACK = "auto_fallback"
     }
 
     @Volatile private var memoryKey: String? = null
@@ -57,6 +58,16 @@ class LLMSettings @Inject constructor(
         get() = runCatching { LLMProvider.valueOf(prefs?.getString(K_PROVIDER, null) ?: "LOCAL") }
             .getOrDefault(LLMProvider.LOCAL)
         set(value) { prefs?.edit()?.putString(K_PROVIDER, value.name)?.apply() }
+
+    /** Try other free models when the chosen free model is saturated (default on). */
+    var autoFallback: Boolean
+        get() = prefs?.getBoolean(K_FALLBACK, true) ?: memFallback
+        set(value) { memFallback = value; prefs?.edit()?.putBoolean(K_FALLBACK, value)?.apply() }
+
+    @Volatile private var memFallback: Boolean = true
+
+    /** Model that actually answered the last request (differs from [model] after a fallback). */
+    @Volatile var lastModelUsed: String? = null
 
     /** True when requests must go to OpenRouter (opt-in, key present). */
     val cloudActive: Boolean get() = provider == LLMProvider.OPENROUTER && hasApiKey

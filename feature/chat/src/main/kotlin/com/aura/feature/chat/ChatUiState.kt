@@ -16,6 +16,7 @@ data class ChatUiState(
     val cloudEnabled: Boolean = false,
     val cloudModel: String = "",
     val hasApiKey: Boolean = false,
+    val autoFallback: Boolean = true,
     val speakReplies: Boolean = false,
     val freeModels: List<OpenRouterModel> = OpenRouterCatalog.FALLBACK,
     val modelsLoading: Boolean = false,

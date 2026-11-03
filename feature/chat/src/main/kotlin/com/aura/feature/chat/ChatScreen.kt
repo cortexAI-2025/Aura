@@ -79,13 +79,14 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             enabled = state.cloudEnabled,
             model = state.cloudModel,
             hasKey = state.hasApiKey,
+            autoFallback = state.autoFallback,
             freeModels = state.freeModels,
             modelsLoading = state.modelsLoading,
             modelsError = state.modelsError,
             onRefreshModels = viewModel::loadFreeModels,
             onDismiss = { showSettings = false },
-            onSave = { enabled, key, model ->
-                viewModel.saveCloudSettings(enabled, key, model)
+            onSave = { enabled, key, model, fallback ->
+                viewModel.saveCloudSettings(enabled, key, model, fallback)
                 showSettings = false
             },
         )
@@ -219,13 +220,15 @@ private fun CloudSettingsDialog(
     enabled: Boolean,
     model: String,
     hasKey: Boolean,
+    autoFallback: Boolean,
     freeModels: List<OpenRouterModel>,
     modelsLoading: Boolean,
     modelsError: String?,
     onRefreshModels: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (enabled: Boolean, apiKey: String, model: String) -> Unit,
+    onSave: (enabled: Boolean, apiKey: String, model: String, autoFallback: Boolean) -> Unit,
 ) {
+    var fallback by remember { mutableStateOf(autoFallback) }
     var useCloud by remember { mutableStateOf(enabled) }
     var key by remember { mutableStateOf("") }
     var modelId by remember { mutableStateOf(model) }
@@ -302,6 +305,20 @@ private fun CloudSettingsDialog(
                     )
                 }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Si le modèle gratuit est saturé (erreur 429), essayer d'autres modèles gratuits " +
+                            "(autres fournisseurs)",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = fallback, onCheckedChange = { fallback = it })
+                }
+
                 Text(
                     "Attention : en mode cloud, vos messages et des extraits de votre mémoire sont envoyés à " +
                         "OpenRouter. Désactivé, tout reste sur l'appareil. La clé est stockée chiffrée.",
@@ -310,7 +327,7 @@ private fun CloudSettingsDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(useCloud, key, modelId) }) { Text("Enregistrer") } },
+        confirmButton = { TextButton(onClick = { onSave(useCloud, key, modelId, fallback) }) { Text("Enregistrer") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
     )
 }

@@ -97,15 +97,17 @@ class ChatViewModel @Inject constructor(
                 cloudEnabled = llmSettings.provider == LLMProvider.OPENROUTER,
                 cloudModel = llmSettings.model,
                 hasApiKey = llmSettings.hasApiKey,
+                autoFallback = llmSettings.autoFallback,
             )
         }
     }
 
     /** Opt in/out of OpenRouter. The key is stored encrypted on-device; blank keeps the saved one. */
-    fun saveCloudSettings(enabled: Boolean, apiKey: String, model: String) {
+    fun saveCloudSettings(enabled: Boolean, apiKey: String, model: String, autoFallback: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             if (apiKey.isNotBlank()) llmSettings.setApiKey(apiKey.trim())
             llmSettings.model = model.trim().ifBlank { LLMSettings.DEFAULT_MODEL }
+            llmSettings.autoFallback = autoFallback
             if (enabled && !llmSettings.hasApiKey) {
                 _uiState.update { it.copy(error = "Clé API OpenRouter requise pour activer le mode cloud") }
             }

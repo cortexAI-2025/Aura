@@ -95,6 +95,18 @@ internal object OpenRouterProtocol {
 
     private fun strings(a: JSONArray?): List<String> = if (a == null) emptyList() else List(a.length()) { a.optString(it) }
 
+    /** Statuses worth retrying with another model: saturated (429), provider down (5xx), model withdrawn (404). */
+    fun isRetryable(code: Int): Boolean = code == 404 || code == 429 || code == 502 || code == 503 || code == 504
+
+    /**
+     * Models to try in order. Only a FREE primary gets fallbacks (never silently switch a paid
+     * model), and only to other free models, at most [maxFallbacks] of them.
+     */
+    fun fallbackChain(primary: String, candidates: List<String>, maxFallbacks: Int = 3): List<String> {
+        if (!primary.endsWith(":free")) return listOf(primary)
+        return listOf(primary) + candidates.filter { it != primary && it.endsWith(":free") }.distinct().take(maxFallbacks)
+    }
+
     /** Human-readable error; never includes the API key. */
     fun describeHttpError(code: Int, body: String): String {
         val detail = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()

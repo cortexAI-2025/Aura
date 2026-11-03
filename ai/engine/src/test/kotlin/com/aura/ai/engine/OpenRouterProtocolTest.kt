@@ -59,6 +59,25 @@ class OpenRouterProtocolTest {
         }
     }
 
+    @Test fun `free primary falls back to other free models only`() {
+        val chain = OpenRouterProtocol.fallbackChain(
+            "a/x:free", listOf("a/x:free", "b/y:free", "c/paid", "d/z:free", "e/w:free", "f/v:free"),
+        )
+        assertEquals(listOf("a/x:free", "b/y:free", "d/z:free", "e/w:free"), chain)
+    }
+
+    @Test fun `a paid primary is never silently replaced`() {
+        assertEquals(listOf("openai/gpt-4o-mini"), OpenRouterProtocol.fallbackChain("openai/gpt-4o-mini", listOf("b/y:free")))
+    }
+
+    @Test fun `only saturation and availability errors are retryable`() {
+        assertTrue(OpenRouterProtocol.isRetryable(429))
+        assertTrue(OpenRouterProtocol.isRetryable(503))
+        assertTrue(OpenRouterProtocol.isRetryable(404))
+        assertFalse(OpenRouterProtocol.isRetryable(401))
+        assertFalse(OpenRouterProtocol.isRetryable(402))
+    }
+
     @Test fun `http errors are readable and never mention a key`() {
         val msg = OpenRouterProtocol.describeHttpError(401, """{"error":{"message":"No auth"}}""")
         assertTrue(msg.contains("401"))
