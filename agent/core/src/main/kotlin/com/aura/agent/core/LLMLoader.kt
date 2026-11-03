@@ -1,9 +1,13 @@
 package com.aura.agent.core
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.aura.ai.engine.LLMEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,6 +42,36 @@ class LLMLoader @Inject constructor(
         Timber.i("Found model: ${model.absolutePath} (${model.length() / 1_000_000} MB)")
         llmEngine.load(model.absolutePath)
     }
+
+    /**
+     * Copies a model file picked by the user (Storage Access Framework) into the
+     * app-private models directory, then returns it. The Gemma weights are licensed
+     * per user (Kaggle / Hugging Face), so they cannot be bundled in the APK.
+     */
+    suspend fun importModel(uri: Uri): Result<File> = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "models").apply { mkdirs() }
+        val tmp = File(dir, "import.part")
+        runCatching {
+            val rawName = queryDisplayName(uri) ?: "imported-model.task"
+            val name = rawName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_")
+            require(name.substringAfterLast('.', "").lowercase() in setOf("bin", "task")) {
+                "Format non supporté : un fichier .bin ou .task est attendu (reçu « $rawName »)."
+            }
+            val input = requireNotNull(context.contentResolver.openInputStream(uri)) {
+                "Impossible d'ouvrir le fichier sélectionné."
+            }
+            input.use { src -> tmp.outputStream().use { dst -> src.copyTo(dst) } }
+            val dest = File(dir, name)
+            if (dest.exists()) dest.delete()
+            check(tmp.renameTo(dest)) { "Impossible d'enregistrer le modèle." }
+            Timber.i("Model imported: ${dest.absolutePath} (${dest.length() / 1_000_000} MB)")
+            dest
+        }.onFailure { tmp.delete() }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? =
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
 
     fun findModel(): File? = modelDirs
         .flatMap { dir -> dir.listFiles()?.toList() ?: emptyList() }

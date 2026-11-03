@@ -20,4 +20,4 @@ sealed interface ChatMessage {
     data object Thinking : ChatMessage
 }
 
-enum class ModelStatusUi { CHECKING, NOT_FOUND, LOADING, READY }
+enum class ModelStatusUi { CHECKING, NOT_FOUND, LOADING, READY, ERROR }

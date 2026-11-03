@@ -1,6 +1,9 @@
 package com.aura.feature.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +31,10 @@ import com.aura.core.ui.theme.*
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(viewModel::importModel)
+    }
+    val pickModel = { modelPicker.launch(arrayOf("*/*")) }
 
     // Scroll to bottom when new messages arrive
     LaunchedEffect(state.messages.size, state.isThinking) {
@@ -36,7 +43,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
     Scaffold(
         containerColor = AuraVoid,
-        topBar = { AuraChatTopBar(state.modelStatus) },
+        topBar = { AuraChatTopBar(state.modelStatus, onImportModel = pickModel) },
         bottomBar = {
             Column {
                 // Pending confirmation banner
@@ -64,6 +71,12 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 12.dp),
         ) {
+            if (state.modelStatus == ModelStatusUi.NOT_FOUND || state.modelStatus == ModelStatusUi.ERROR) {
+                item { ModelSetupCard(loading = false, onImport = pickModel) }
+            } else if (state.modelStatus == ModelStatusUi.LOADING) {
+                item { ModelSetupCard(loading = true, onImport = pickModel) }
+            }
+
             items(state.messages, key = { it.hashCode() }) { msg ->
                 ChatBubble(msg)
             }
@@ -101,7 +114,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuraChatTopBar(modelStatus: ModelStatusUi) {
+private fun AuraChatTopBar(modelStatus: ModelStatusUi, onImportModel: () -> Unit) {
     TopAppBar(
         title = { Text("Aura", style = MaterialTheme.typography.titleLarge) },
         actions = {
@@ -110,11 +123,45 @@ private fun AuraChatTopBar(modelStatus: ModelStatusUi) {
                 ModelStatusUi.LOADING -> "Loading…" to AuraWarning
                 ModelStatusUi.NOT_FOUND -> "No model" to AuraError
                 ModelStatusUi.CHECKING -> "Checking" to AuraOnSurfaceDim
+                ModelStatusUi.ERROR -> "Load failed" to AuraError
             }
-            AuraStatusChip(label, color, Modifier.padding(end = 12.dp))
+            val canImport = modelStatus == ModelStatusUi.NOT_FOUND || modelStatus == ModelStatusUi.ERROR
+            AuraStatusChip(
+                label, color,
+                Modifier.padding(end = 12.dp).clickable(enabled = canImport, onClick = onImportModel),
+            )
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = AuraVoid),
     )
+}
+
+@Composable
+private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = AuraSurfaceVariant,
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                if (loading) "Chargement du modèle…" else "Modèle IA requis",
+                style = MaterialTheme.typography.titleMedium,
+                color = AuraOnSurface,
+            )
+            Text(
+                if (loading) "Le modèle est copié puis chargé en mémoire. Cela peut prendre une minute."
+                else "Aura tourne 100 % sur l'appareil. Téléchargez un modèle Gemma 2B (fichier .bin ou .task, " +
+                    "≈1,4 Go, licence Gemma à accepter sur Kaggle ou Hugging Face), puis importez-le ici.",
+                style = MaterialTheme.typography.bodySmall,
+                color = AuraOnSurfaceDim,
+            )
+            if (loading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = AuraPulse)
+            } else {
+                Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer un modèle") }
+            }
+        }
+    }
 }
 
 @Composable

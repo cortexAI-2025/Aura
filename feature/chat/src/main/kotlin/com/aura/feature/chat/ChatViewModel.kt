@@ -1,6 +1,7 @@
 package com.aura.feature.chat
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.agent.core.*
@@ -12,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.UUID
@@ -57,15 +59,34 @@ class ChatViewModel @Inject constructor(
     private fun checkModelStatus() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(modelStatus = ModelStatusUi.CHECKING) }
-            val status = llmLoader.getModelStatus()
-            _uiState.update {
-                it.copy(modelStatus = when (status) {
-                    ModelStatus.LOADED -> ModelStatusUi.READY
-                    ModelStatus.FOUND_NOT_LOADED -> ModelStatusUi.LOADING
-                    ModelStatus.NOT_FOUND -> ModelStatusUi.NOT_FOUND
-                })
+            // The foreground service loads the model asynchronously: poll until it is ready.
+            var attempts = 0
+            do {
+                val status = llmLoader.getModelStatus()
+                _uiState.update { it.copy(modelStatus = status.toUi()) }
+                if (status != ModelStatus.FOUND_NOT_LOADED) break
+                delay(1_000)
+            } while (++attempts < 180)
+        }
+    }
+
+    /** Copy a model file chosen by the user into the app, then load it. */
+    fun importModel(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(modelStatus = ModelStatusUi.LOADING, error = null) }
+            val result = llmLoader.importModel(uri).mapCatching { llmLoader.loadIfNeeded() }
+            result.onFailure { e ->
+                _uiState.update { it.copy(modelStatus = ModelStatusUi.ERROR, error = e.message ?: "Échec de l'import du modèle") }
+            }.onSuccess {
+                _uiState.update { it.copy(modelStatus = llmLoader.getModelStatus().toUi(), error = null) }
             }
         }
+    }
+
+    private fun ModelStatus.toUi() = when (this) {
+        ModelStatus.LOADED -> ModelStatusUi.READY
+        ModelStatus.FOUND_NOT_LOADED -> ModelStatusUi.LOADING
+        ModelStatus.NOT_FOUND -> ModelStatusUi.NOT_FOUND
     }
 
     fun onInputChanged(text: String) = _uiState.update { it.copy(inputText = text) }
