@@ -103,9 +103,13 @@ class AgentEngine @Inject constructor(
 
             val action = step.action
             if (action == null) {
-                // LLM produced non-JSON text — treat as final answer
-                finalAnswer = rawResponse
-                break
+                // Reasoning only, no final_answer: ask again rather than showing the model's inner thoughts.
+                prompt = promptBuilder.buildObservationPrompt(
+                    prompt + rawResponse, "system",
+                    "Your reply had no \"final_answer\". Reply ONLY with JSON: " +
+                        "{\"thought\":\"...\",\"final_answer\":\"<your answer to the user, in the user's language>\"}",
+                )
+                continue
             }
 
             // Log the action before executing

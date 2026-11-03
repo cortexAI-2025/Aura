@@ -27,6 +27,13 @@ class LLMResponseParserTest {
         assertEquals("7", step.action?.params?.get("days_ahead"))
     }
 
+    @Test fun `thought without action or final_answer is not a final answer`() {
+        val step = parser.parse("""{"thought":"The user greeted in French."}""")
+        assertFalse(step.isFinal)
+        assertNull(step.finalAnswer)
+        assertNull(step.action)
+    }
+
     @Test fun `treats malformed JSON as final answer`() {
         val raw = "Bonjour ! Comment puis-je vous aider ?"
         val step = parser.parse(raw)

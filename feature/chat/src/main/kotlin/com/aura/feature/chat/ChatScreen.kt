@@ -2,7 +2,10 @@ package com.aura.feature.chat
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -44,6 +48,7 @@ import java.util.Locale
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
+    val appContext = LocalContext.current
     val modelPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::importModel)
     }
@@ -165,12 +170,27 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             // Error
             state.error?.let { err ->
                 item {
-                    Text(
-                        text = err,
-                        color = AuraError,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(8.dp),
-                    )
+                    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(text = err, color = AuraError, style = MaterialTheme.typography.bodySmall)
+                        if (state.ttsProblem) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = {
+                                    openFirst(
+                                        appContext,
+                                        Intent("com.android.settings.TTS_SETTINGS"),
+                                        Intent(Settings.ACTION_SETTINGS),
+                                    )
+                                }) { Text("Réglages voix") }
+                                OutlinedButton(onClick = {
+                                    openFirst(
+                                        appContext,
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.tts")),
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts")),
+                                    )
+                                }) { Text("Installer voix Google") }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -213,6 +233,18 @@ private fun AuraChatTopBar(
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = AuraVoid),
     )
+}
+
+/** Launch the first intent that some installed app can handle. */
+private fun openFirst(context: Context, vararg intents: Intent) {
+    for (intent in intents) {
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (_: ActivityNotFoundException) {
+            // try the next one
+        }
+    }
 }
 
 @Composable

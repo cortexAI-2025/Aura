@@ -102,6 +102,25 @@ class AgentEngineTest {
         }
     }
 
+    @Test fun `thought-only reply triggers a retry instead of showing the reasoning`() = runTest {
+        every { llmEngine.isReady } returns true
+        coEvery { llmEngine.embed(any()) } returns FloatArray(384)
+        coEvery { retrieveContext(any(), any()) } returns AgentContext(emptyList(), emptyList())
+        coEvery { conversationRepository.getRecentMessages(any()) } returns emptyList()
+        coEvery { userRulesStore.getRules() } returns UserRules()
+        var calls = 0
+        every { llmEngine.generate(any(), any()) } answers {
+            calls++
+            if (calls == 1) flowOf(LLMToken("""{"thought":"The user greeted in French."}""", true))
+            else flowOf(LLMToken("""{"thought":"ok","final_answer":"Bonjour !"}""", true))
+        }
+
+        val events = mutableListOf<AgentEvent>()
+        agentEngine.process("Bonjour").collect { events.add(it) }
+
+        assertEquals("Bonjour !", events.filterIsInstance<AgentEvent.FinalAnswer>().single().text)
+    }
+
     @Test fun `executes action and then emits final answer`() = runTest {
         every { llmEngine.isReady } returns true
         coEvery { llmEngine.embed(any()) } returns FloatArray(384)

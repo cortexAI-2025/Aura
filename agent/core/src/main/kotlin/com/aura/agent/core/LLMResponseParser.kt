@@ -56,7 +56,9 @@ class LLMResponseParser @Inject constructor() {
         }
 
         val actionObj = obj.optJSONObject("action")
-            ?: return AgentStep(thought = thought, action = null, observation = null, isFinal = true, finalAnswer = thought)
+            // JSON with only a "thought" (no action, no final_answer): NOT a user-facing answer.
+            // The engine asks the model again instead of showing its internal reasoning.
+            ?: return AgentStep(thought = thought, action = null, observation = null, isFinal = false, finalAnswer = null)
 
         val toolName = actionObj.optString("tool", "UNKNOWN")
         val tool = runCatching { ToolType.valueOf(toolName) }.getOrDefault(ToolType.UNKNOWN)

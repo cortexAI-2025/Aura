@@ -203,7 +203,7 @@ class ChatViewModel @Inject constructor(
     fun setSpeakReplies(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SPEAK, enabled).apply()
         ttsFailed = false
-        _uiState.update { it.copy(speakReplies = enabled, error = null) }
+        _uiState.update { it.copy(speakReplies = enabled, error = null, ttsProblem = false) }
         if (enabled) ensureTts() else tts?.stop()
     }
 
@@ -227,13 +227,18 @@ class ChatViewModel @Inject constructor(
         if (index >= candidates.size) {
             ttsInitializing = false
             ttsFailed = true
-            val found = if (detected.isEmpty()) "aucun moteur détecté" else "moteurs détectés : ${detected.joinToString()}"
+            val found = if (detected.isEmpty()) "aucun moteur installé" else "moteur détecté : ${detected.joinToString()}"
+            val default = runCatching {
+                android.provider.Settings.Secure.getString(context.contentResolver, "tts_default_synth")
+            }.getOrNull() ?: "inconnu"
             prefs.edit().putBoolean(KEY_SPEAK, false).apply()
             _uiState.update {
                 it.copy(
                     speakReplies = false,
-                    error = "Synthèse vocale indisponible ($found). Installez ou activez « Synthèse vocale Google » " +
-                        "(Paramètres > Gestion globale > Langue > Synthèse vocale).",
+                    ttsProblem = true,
+                    error = "Le moteur de synthèse vocale du téléphone refuse de démarrer ($found ; par défaut : $default). " +
+                        "Mettez-le à jour (Galaxy Store / Play Store) ou installez « Synthèse vocale Google », " +
+                        "puis choisissez-le comme moteur par défaut.",
                 )
             }
             return
@@ -253,6 +258,7 @@ class ChatViewModel @Inject constructor(
     private fun onTtsReady(engine: TextToSpeech) {
         tts = engine
         ttsInitializing = false
+        _uiState.update { it.copy(ttsProblem = false) }
         var r = engine.setLanguage(Locale.getDefault())
         if (r < TextToSpeech.LANG_AVAILABLE) r = engine.setLanguage(Locale.FRENCH)
         if (r < TextToSpeech.LANG_AVAILABLE) {
