@@ -29,7 +29,8 @@ class RetrieveContextUseCaseTest {
 
         val ctx = withTimeout(5_000) { RetrieveContextUseCase(memories(), goals).invoke(floatArrayOf(1f)) }
 
-        assertEquals(listOf(goal(1)), ctx.activeGoals)
+        // Compare ids: Goal.createdAt defaults to Instant.now(), so two instances are never equal.
+        assertEquals(listOf("g1"), ctx.activeGoals.map { it.id })
     }
 
     @Test fun `keeps at most five goals`() = runBlocking {
