@@ -101,7 +101,8 @@ class AgentEngine @Inject constructor(
                 break
             }
 
-            val action = step.action ?: run {
+            val action = step.action
+            if (action == null) {
                 // LLM produced non-JSON text — treat as final answer
                 finalAnswer = rawResponse
                 break
