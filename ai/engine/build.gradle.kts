@@ -36,9 +36,12 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.coroutines.android)
     implementation(libs.timber)
+    implementation(libs.security.crypto)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.turbine)
+    // org.json is bundled with Android but not on the plain JVM unit-test classpath
+    testImplementation("org.json:json:20240303")
 }

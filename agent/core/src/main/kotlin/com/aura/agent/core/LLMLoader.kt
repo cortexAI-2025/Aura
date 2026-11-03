@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.aura.ai.engine.LLMEngine
+import com.aura.ai.engine.LLMSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,7 @@ import javax.inject.Singleton
 class LLMLoader @Inject constructor(
     @ApplicationContext private val context: Context,
     private val llmEngine: LLMEngine,
+    private val settings: LLMSettings,
 ) {
     private val modelDirs = listOf(
         File(context.filesDir, "models"),
@@ -81,6 +83,7 @@ class LLMLoader @Inject constructor(
     fun getModelStatus(): ModelStatus {
         val model = findModel()
         return when {
+            settings.cloudActive -> ModelStatus.CLOUD
             llmEngine.isReady -> ModelStatus.LOADED
             model != null -> ModelStatus.FOUND_NOT_LOADED
             else -> ModelStatus.NOT_FOUND
@@ -88,4 +91,4 @@ class LLMLoader @Inject constructor(
     }
 }
 
-enum class ModelStatus { NOT_FOUND, FOUND_NOT_LOADED, LOADED }
+enum class ModelStatus { NOT_FOUND, FOUND_NOT_LOADED, LOADED, CLOUD }

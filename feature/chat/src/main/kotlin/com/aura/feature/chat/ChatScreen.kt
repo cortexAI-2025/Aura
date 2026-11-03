@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aura.core.ui.component.AuraStatusChip
@@ -35,6 +37,20 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         uri?.let(viewModel::importModel)
     }
     val pickModel = { modelPicker.launch(arrayOf("*/*")) }
+    var showSettings by remember { mutableStateOf(false) }
+
+    if (showSettings) {
+        CloudSettingsDialog(
+            enabled = state.cloudEnabled,
+            model = state.cloudModel,
+            hasKey = state.hasApiKey,
+            onDismiss = { showSettings = false },
+            onSave = { enabled, key, model ->
+                viewModel.saveCloudSettings(enabled, key, model)
+                showSettings = false
+            },
+        )
+    }
 
     // Scroll to bottom when new messages arrive
     LaunchedEffect(state.messages.size, state.isThinking) {
@@ -43,7 +59,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
     Scaffold(
         containerColor = AuraVoid,
-        topBar = { AuraChatTopBar(state.modelStatus, onImportModel = pickModel) },
+        topBar = { AuraChatTopBar(state.modelStatus, onImportModel = pickModel, onOpenSettings = { showSettings = true }) },
         bottomBar = {
             Column {
                 // Pending confirmation banner
@@ -72,9 +88,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             contentPadding = PaddingValues(vertical = 12.dp),
         ) {
             if (state.modelStatus == ModelStatusUi.NOT_FOUND || state.modelStatus == ModelStatusUi.ERROR) {
-                item { ModelSetupCard(loading = false, onImport = pickModel) }
+                item { ModelSetupCard(loading = false, onImport = pickModel, onOpenCloud = { showSettings = true }) }
             } else if (state.modelStatus == ModelStatusUi.LOADING) {
-                item { ModelSetupCard(loading = true, onImport = pickModel) }
+                item { ModelSetupCard(loading = true, onImport = pickModel, onOpenCloud = { showSettings = true }) }
             }
 
             items(state.messages, key = { it.hashCode() }) { msg ->
@@ -114,16 +130,18 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuraChatTopBar(modelStatus: ModelStatusUi, onImportModel: () -> Unit) {
+private fun AuraChatTopBar(modelStatus: ModelStatusUi, onImportModel: () -> Unit, onOpenSettings: () -> Unit) {
     TopAppBar(
         title = { Text("Aura", style = MaterialTheme.typography.titleLarge) },
         actions = {
+            IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Paramètres IA") }
             val (label, color) = when (modelStatus) {
                 ModelStatusUi.READY -> "On-device" to AuraSuccess
                 ModelStatusUi.LOADING -> "Loading…" to AuraWarning
                 ModelStatusUi.NOT_FOUND -> "No model" to AuraError
                 ModelStatusUi.CHECKING -> "Checking" to AuraOnSurfaceDim
                 ModelStatusUi.ERROR -> "Load failed" to AuraError
+                ModelStatusUi.CLOUD -> "OpenRouter" to AuraGlow
             }
             val canImport = modelStatus == ModelStatusUi.NOT_FOUND || modelStatus == ModelStatusUi.ERROR
             AuraStatusChip(
@@ -136,7 +154,60 @@ private fun AuraChatTopBar(modelStatus: ModelStatusUi, onImportModel: () -> Unit
 }
 
 @Composable
-private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit) {
+private fun CloudSettingsDialog(
+    enabled: Boolean,
+    model: String,
+    hasKey: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (enabled: Boolean, apiKey: String, model: String) -> Unit,
+) {
+    var useCloud by remember { mutableStateOf(enabled) }
+    var key by remember { mutableStateOf("") }
+    var modelId by remember { mutableStateOf(model) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AuraSurface,
+        title = { Text("IA cloud (OpenRouter)") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Utiliser OpenRouter", modifier = Modifier.weight(1f))
+                    Switch(checked = useCloud, onCheckedChange = { useCloud = it })
+                }
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    label = { Text(if (hasKey) "Clé API (enregistrée — vide = conserver)" else "Clé API OpenRouter") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = modelId,
+                    onValueChange = { modelId = it },
+                    label = { Text("Modèle (ex. openai/gpt-4o-mini)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Attention : en mode cloud, vos messages et des extraits de votre mémoire sont envoyés à " +
+                        "OpenRouter. Désactivé, tout reste sur l'appareil. La clé est stockée chiffrée.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AuraOnSurfaceDim,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(useCloud, key, modelId) }) { Text("Enregistrer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
+@Composable
+private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit, onOpenCloud: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -159,6 +230,7 @@ private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = AuraPulse)
             } else {
                 Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer un modèle") }
+                OutlinedButton(onClick = onOpenCloud, modifier = Modifier.fillMaxWidth()) { Text("Ou utiliser OpenRouter (cloud)") }
             }
         }
     }

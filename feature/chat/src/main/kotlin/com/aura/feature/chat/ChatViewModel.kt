@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.agent.core.*
+import com.aura.ai.engine.LLMProvider
+import com.aura.ai.engine.LLMSettings
 import com.aura.core.domain.model.AgentAction
 import com.aura.core.domain.model.Message
 import com.aura.core.domain.model.MessageRole
@@ -24,6 +26,7 @@ class ChatViewModel @Inject constructor(
     private val agentEngine: AgentEngine,
     private val conversationRepository: ConversationRepository,
     private val llmLoader: LLMLoader,
+    private val llmSettings: LLMSettings,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -33,6 +36,7 @@ class ChatViewModel @Inject constructor(
     init {
         loadHistory()
         observeServiceEvents()
+        refreshCloudState()
         checkModelStatus()
     }
 
@@ -70,6 +74,31 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun refreshCloudState() {
+        _uiState.update {
+            it.copy(
+                cloudEnabled = llmSettings.provider == LLMProvider.OPENROUTER,
+                cloudModel = llmSettings.model,
+                hasApiKey = llmSettings.hasApiKey,
+            )
+        }
+    }
+
+    /** Opt in/out of OpenRouter. The key is stored encrypted on-device; blank keeps the saved one. */
+    fun saveCloudSettings(enabled: Boolean, apiKey: String, model: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (apiKey.isNotBlank()) llmSettings.setApiKey(apiKey.trim())
+            llmSettings.model = model.trim().ifBlank { LLMSettings.DEFAULT_MODEL }
+            if (enabled && !llmSettings.hasApiKey) {
+                _uiState.update { it.copy(error = "Clé API OpenRouter requise pour activer le mode cloud") }
+            }
+            llmSettings.provider = if (enabled && llmSettings.hasApiKey) LLMProvider.OPENROUTER else LLMProvider.LOCAL
+            refreshCloudState()
+            if (!llmSettings.cloudActive) runCatching { llmLoader.loadIfNeeded() }
+            checkModelStatus()
+        }
+    }
+
     /** Copy a model file chosen by the user into the app, then load it. */
     fun importModel(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -87,6 +116,7 @@ class ChatViewModel @Inject constructor(
         ModelStatus.LOADED -> ModelStatusUi.READY
         ModelStatus.FOUND_NOT_LOADED -> ModelStatusUi.LOADING
         ModelStatus.NOT_FOUND -> ModelStatusUi.NOT_FOUND
+        ModelStatus.CLOUD -> ModelStatusUi.CLOUD
     }
 
     fun onInputChanged(text: String) = _uiState.update { it.copy(inputText = text) }

@@ -1,7 +1,7 @@
 package com.aura.ai.engine.di
 
 import com.aura.ai.engine.LLMEngine
-import com.aura.ai.engine.MediaPipeLLM
+import com.aura.ai.engine.RoutedLLMEngine
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -12,5 +12,5 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 abstract class AIEngineModule {
     @Binds @Singleton
-    abstract fun bindLLMEngine(impl: MediaPipeLLM): LLMEngine
+    abstract fun bindLLMEngine(impl: RoutedLLMEngine): LLMEngine
 }

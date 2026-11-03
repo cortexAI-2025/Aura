@@ -118,7 +118,7 @@ class AgentEngine @Inject constructor(
                     Timber.w("Action blocked: ${decision.reason}")
                     // Inject the block reason as an observation so the LLM can adapt
                     prompt = promptBuilder.buildObservationPrompt(
-                        prompt, action.tool.name,
+                        prompt + rawResponse, action.tool.name,
                         "BLOCKED: ${decision.reason}"
                     )
                     continue
@@ -136,7 +136,7 @@ class AgentEngine @Inject constructor(
             emit(AgentEvent.ActionResult(result))
 
             // Append observation to prompt for next step
-            prompt = promptBuilder.buildObservationPrompt(prompt, action.tool.name, result.output)
+            prompt = promptBuilder.buildObservationPrompt(prompt + rawResponse, action.tool.name, result.output)
         }
 
         val answer = finalAnswer ?: "Je n'ai pas pu compléter la tâche après $MAX_STEPS étapes."

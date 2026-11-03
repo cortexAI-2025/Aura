@@ -11,6 +11,9 @@ data class ChatUiState(
     val pendingAction: AgentAction? = null,
     val modelStatus: ModelStatusUi = ModelStatusUi.CHECKING,
     val error: String? = null,
+    val cloudEnabled: Boolean = false,
+    val cloudModel: String = "",
+    val hasApiKey: Boolean = false,
 )
 
 sealed interface ChatMessage {
@@ -20,4 +23,4 @@ sealed interface ChatMessage {
     data object Thinking : ChatMessage
 }
 
-enum class ModelStatusUi { CHECKING, NOT_FOUND, LOADING, READY, ERROR }
+enum class ModelStatusUi { CHECKING, NOT_FOUND, LOADING, READY, ERROR, CLOUD }
