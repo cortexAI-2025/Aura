@@ -21,7 +21,7 @@ class LLMSettings @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     companion object {
-        const val DEFAULT_MODEL = "openai/gpt-4o-mini"
+        const val DEFAULT_MODEL = "google/gemma-4-31b-it:free"
         private const val FILE = "aura_llm_settings"
         private const val K_API = "openrouter_api_key"
         private const val K_MODEL = "openrouter_model"

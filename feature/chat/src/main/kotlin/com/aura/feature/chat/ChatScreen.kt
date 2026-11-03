@@ -189,7 +189,7 @@ private fun CloudSettingsDialog(
                 OutlinedTextField(
                     value = modelId,
                     onValueChange = { modelId = it },
-                    label = { Text("Modèle (ex. openai/gpt-4o-mini)") },
+                    label = { Text("Modèle (ex. google/gemma-4-31b-it:free)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
