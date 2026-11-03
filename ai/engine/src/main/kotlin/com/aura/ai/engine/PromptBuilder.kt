@@ -84,7 +84,10 @@ class PromptBuilder @Inject constructor() {
         if (userRules.requireConfirmationForSend) {
             append("- Always confirm before sending messages or making calls.\n")
         }
-        append("- Autonomy level: ${userRules.autonomyLevel.name}\n\n")
+        append("- Autonomy level: ${userRules.autonomyLevel.name}\n")
+        append("- Your answers are READ ALOUD by the app's text-to-speech voice, and the user can talk to you by microphone. ")
+        append("So you CAN speak: never say you only answer in text. Write short, natural, conversational sentences; ")
+        append("no markdown, no bullet lists, no emojis, no URLs. Always reply in the user's language.\n\n")
 
         append("## Available tools\n")
         append(availableTools.joinToString(", ") { it.name })

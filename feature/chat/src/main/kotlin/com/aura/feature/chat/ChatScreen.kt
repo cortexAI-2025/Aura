@@ -142,7 +142,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             }
 
             items(state.messages, key = { it.hashCode() }) { msg ->
-                ChatBubble(msg)
+                ChatBubble(msg, onSpeak = viewModel::speakMessage)
             }
 
             // Streaming partial response
@@ -346,10 +346,10 @@ private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit, onOpenCloud: 
 }
 
 @Composable
-private fun ChatBubble(message: ChatMessage) {
+private fun ChatBubble(message: ChatMessage, onSpeak: (String) -> Unit) {
     when (message) {
         is ChatMessage.User -> UserBubble(message.message.content)
-        is ChatMessage.Agent -> AgentBubble(message.message.content)
+        is ChatMessage.Agent -> AgentBubble(message.message.content, onSpeak = { onSpeak(message.message.content) })
         is ChatMessage.ActionLog -> ActionLogBubble(message.description, message.success)
         is ChatMessage.Thinking -> AuraThinkingIndicator()
     }
@@ -369,7 +369,7 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AgentBubble(text: String, isStreaming: Boolean = false) {
+private fun AgentBubble(text: String, isStreaming: Boolean = false, onSpeak: (() -> Unit)? = null) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Surface(
             modifier = Modifier.widthIn(max = 300.dp),
@@ -381,6 +381,16 @@ private fun AgentBubble(text: String, isStreaming: Boolean = false) {
                 if (isStreaming) {
                     Spacer(Modifier.height(4.dp))
                     AuraThinkingIndicator()
+                }
+                if (onSpeak != null) {
+                    IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp).align(Alignment.End)) {
+                        Icon(
+                            Icons.Default.VolumeUp,
+                            contentDescription = "Écouter cette réponse",
+                            tint = AuraOnSurfaceDim,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }

@@ -44,11 +44,13 @@ class ChatViewModel @Inject constructor(
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var ttsInitializing = false
+    private var ttsFailed = false
+    @Volatile private var replyAloud = false
     private var pendingSpeech: String? = null
     private var watchdog: Job? = null
 
     init {
-        _uiState.update { it.copy(speakReplies = prefs.getBoolean(KEY_SPEAK, false)) }
+        _uiState.update { it.copy(speakReplies = prefs.getBoolean(KEY_SPEAK, true)) }
         loadHistory()
         observeServiceEvents()
         refreshCloudState()
@@ -151,9 +153,12 @@ class ChatViewModel @Inject constructor(
 
     fun onInputChanged(text: String) = _uiState.update { it.copy(inputText = text) }
 
-    fun sendMessage() {
+    fun sendMessage() = doSend(viaVoice = false)
+
+    private fun doSend(viaVoice: Boolean) {
         val text = _uiState.value.inputText.trim()
         if (text.isBlank()) return
+        replyAloud = viaVoice // a question asked by voice is answered by voice
         tts?.stop()
         _uiState.update { it.copy(inputText = "", isThinking = true, streamingText = "", error = null) }
         armWatchdog()
@@ -174,7 +179,7 @@ class ChatViewModel @Inject constructor(
     fun onVoiceResult(text: String) {
         if (text.isBlank()) return
         _uiState.update { it.copy(inputText = text.trim()) }
-        sendMessage()
+        doSend(viaVoice = true)
     }
 
     fun onVoiceFailed(resultCode: Int) {
@@ -195,7 +200,8 @@ class ChatViewModel @Inject constructor(
 
     fun setSpeakReplies(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_SPEAK, enabled).apply()
-        _uiState.update { it.copy(speakReplies = enabled) }
+        ttsFailed = false
+        _uiState.update { it.copy(speakReplies = enabled, error = null) }
         if (enabled) ensureTts() else tts?.stop()
     }
 
@@ -218,6 +224,7 @@ class ChatViewModel @Inject constructor(
     private fun tryInitTts(candidates: List<String?>, index: Int, detected: List<String>) {
         if (index >= candidates.size) {
             ttsInitializing = false
+            ttsFailed = true
             val found = if (detected.isEmpty()) "aucun moteur détecté" else "moteurs détectés : ${detected.joinToString()}"
             prefs.edit().putBoolean(KEY_SPEAK, false).apply()
             _uiState.update {
@@ -258,8 +265,15 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun speak(text: String) {
-        if (!_uiState.value.speakReplies) return
+    /** Read one reply aloud on demand (the speaker button on a bubble), whatever the global setting. */
+    fun speakMessage(text: String) {
+        ttsFailed = false
+        speak(text, force = true)
+    }
+
+    private fun speak(text: String, force: Boolean = false) {
+        if (!force && !_uiState.value.speakReplies && !replyAloud) return
+        if (!force && ttsFailed) return
         val clean = SpeechText.clean(text)
         if (clean.isEmpty()) return
         ensureTts()
@@ -319,7 +333,8 @@ class ChatViewModel @Inject constructor(
     }
 
     private companion object {
-        const val KEY_SPEAK = "speak_replies"
+        // v2: the previous key was forced to false by an earlier init failure; default is now ON.
+        const val KEY_SPEAK = "speak_replies_v2"
         const val WATCHDOG_MS = 330_000L
     }
 }
