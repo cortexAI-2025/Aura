@@ -14,6 +14,7 @@ data class ChatUiState(
     val cloudEnabled: Boolean = false,
     val cloudModel: String = "",
     val hasApiKey: Boolean = false,
+    val speakReplies: Boolean = false,
 )
 
 sealed interface ChatMessage {

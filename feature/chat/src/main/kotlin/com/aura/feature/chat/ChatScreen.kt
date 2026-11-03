@@ -1,5 +1,9 @@
 package com.aura.feature.chat
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -13,8 +17,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.aura.core.ui.component.AuraStatusChip
 import com.aura.core.ui.component.AuraThinkingIndicator
 import com.aura.core.ui.theme.*
+import java.util.Locale
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
@@ -38,6 +46,26 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
     }
     val pickModel = { modelPicker.launch(arrayOf("*/*")) }
     var showSettings by remember { mutableStateOf(false) }
+
+    // Speech-to-text via the system recogniser (no RECORD_AUDIO permission needed in this app).
+    val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) viewModel.onVoiceResult(spoken)
+        }
+    }
+    val startVoice = {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Parlez à Aura…")
+        }
+        try {
+            voiceLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            viewModel.onVoiceUnavailable()
+        }
+    }
 
     if (showSettings) {
         CloudSettingsDialog(
@@ -59,7 +87,15 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
     Scaffold(
         containerColor = AuraVoid,
-        topBar = { AuraChatTopBar(state.modelStatus, onImportModel = pickModel, onOpenSettings = { showSettings = true }) },
+        topBar = {
+            AuraChatTopBar(
+                state.modelStatus,
+                onImportModel = pickModel,
+                onOpenSettings = { showSettings = true },
+                speakReplies = state.speakReplies,
+                onToggleSpeak = { viewModel.setSpeakReplies(!state.speakReplies) },
+            )
+        },
         bottomBar = {
             Column {
                 // Pending confirmation banner
@@ -76,6 +112,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                     text = state.inputText,
                     onTextChange = viewModel::onInputChanged,
                     onSend = viewModel::sendMessage,
+                    onMic = startVoice,
                     enabled = !state.isThinking && state.pendingAction == null,
                 )
             }
@@ -130,10 +167,23 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AuraChatTopBar(modelStatus: ModelStatusUi, onImportModel: () -> Unit, onOpenSettings: () -> Unit) {
+private fun AuraChatTopBar(
+    modelStatus: ModelStatusUi,
+    onImportModel: () -> Unit,
+    onOpenSettings: () -> Unit,
+    speakReplies: Boolean,
+    onToggleSpeak: () -> Unit,
+) {
     TopAppBar(
         title = { Text("Aura", style = MaterialTheme.typography.titleLarge) },
         actions = {
+            IconButton(onClick = onToggleSpeak) {
+                Icon(
+                    if (speakReplies) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                    contentDescription = if (speakReplies) "Désactiver la lecture vocale" else "Activer la lecture vocale",
+                    tint = if (speakReplies) AuraPulse else AuraOnSurfaceDim,
+                )
+            }
             IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Paramètres IA") }
             val (label, color) = when (modelStatus) {
                 ModelStatusUi.READY -> "On-device" to AuraSuccess
@@ -318,6 +368,7 @@ private fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onMic: () -> Unit,
     enabled: Boolean,
 ) {
     Surface(color = AuraSurface, tonalElevation = 3.dp) {
@@ -343,6 +394,9 @@ private fun ChatInputBar(
                     cursorColor = AuraPulse,
                 ),
             )
+            IconButton(onClick = onMic, enabled = enabled, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Mic, contentDescription = "Parler à Aura", tint = if (enabled) AuraPulse else AuraOnSurfaceDim)
+            }
             IconButton(
                 onClick = onSend,
                 enabled = enabled && text.isNotBlank(),

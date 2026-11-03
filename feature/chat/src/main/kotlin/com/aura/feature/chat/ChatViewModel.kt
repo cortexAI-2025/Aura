@@ -2,6 +2,7 @@ package com.aura.feature.chat
 
 import android.content.Context
 import android.net.Uri
+import android.speech.tts.TextToSpeech
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.agent.core.*
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 
@@ -33,7 +35,13 @@ class ChatViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    private val prefs = context.getSharedPreferences("aura_ui", Context.MODE_PRIVATE)
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private var pendingSpeech: String? = null
+
     init {
+        _uiState.update { it.copy(speakReplies = prefs.getBoolean(KEY_SPEAK, false)) }
         loadHistory()
         observeServiceEvents()
         refreshCloudState()
@@ -124,6 +132,7 @@ class ChatViewModel @Inject constructor(
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
         if (text.isBlank()) return
+        tts?.stop()
         _uiState.update { it.copy(inputText = "", isThinking = true, streamingText = "") }
         AuraAgentService.processMessage(context, text)
     }
@@ -134,6 +143,59 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             agentEngine.process("CONFIRMED: ${action.tool} ${action.params}").collect { handleAgentEvent(it) }
         }
+    }
+
+    // ── Voice ────────────────────────────────────────────────────────────────
+
+    /** Text recognised by the system speech recogniser: send it as a normal message. */
+    fun onVoiceResult(text: String) {
+        if (text.isBlank()) return
+        _uiState.update { it.copy(inputText = text.trim()) }
+        sendMessage()
+    }
+
+    fun onVoiceUnavailable() {
+        _uiState.update { it.copy(error = "Reconnaissance vocale indisponible sur cet appareil (service Google requis).") }
+    }
+
+    fun setSpeakReplies(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SPEAK, enabled).apply()
+        _uiState.update { it.copy(speakReplies = enabled) }
+        if (enabled) ensureTts() else tts?.stop()
+    }
+
+    private fun ensureTts() {
+        if (tts != null) return
+        tts = TextToSpeech(context) { status ->
+            val engine = tts
+            if (status == TextToSpeech.SUCCESS && engine != null) {
+                val r = engine.setLanguage(Locale.getDefault())
+                if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    engine.setLanguage(Locale.FRENCH)
+                }
+                ttsReady = true
+                pendingSpeech?.let { pending -> pendingSpeech = null; engine.speak(pending, TextToSpeech.QUEUE_FLUSH, null, "aura-reply") }
+            } else {
+                _uiState.update { it.copy(error = "Synthèse vocale indisponible sur cet appareil.", speakReplies = false) }
+            }
+        }
+    }
+
+    private fun speak(text: String) {
+        if (!_uiState.value.speakReplies) return
+        val clean = SpeechText.clean(text)
+        if (clean.isEmpty()) return
+        ensureTts()
+        val engine = tts
+        if (ttsReady && engine != null) engine.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "aura-reply")
+        else pendingSpeech = clean
+    }
+
+    override fun onCleared() {
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        super.onCleared()
     }
 
     fun dismissPendingAction() = _uiState.update { it.copy(pendingAction = null, isThinking = false) }
@@ -150,11 +212,15 @@ class ChatViewModel @Inject constructor(
                 it.copy(isThinking = false, pendingAction = event.action)
             }
             is AgentEvent.FinalAnswer -> {
-                val msg = Message(UUID.randomUUID().toString(), MessageRole.ASSISTANT, event.text, Instant.now())
+                speak(event.text)
                 _uiState.update { it.copy(isThinking = false, streamingText = "", error = null) }
             }
             is AgentEvent.Error -> _uiState.update { it.copy(isThinking = false, error = event.message) }
             else -> {}
         }
+    }
+
+    private companion object {
+        const val KEY_SPEAK = "speak_replies"
     }
 }
