@@ -149,7 +149,7 @@ class AuraAgentIntegrationTest {
         AuraLogger.log(AuraLogger.TAG_QUEUE, "START id=${task.id}")
 
         // ── Step 3: AgentEngine runs — this is the core of the integration test ─
-        agentEngine.process(task.description).collect()
+        agentEngine.process(task.description).collect { }
 
         // ── Step 4: TaskQueue logs COMPLETE after processor returns ────────────
         AuraLogger.log(AuraLogger.TAG_QUEUE, "COMPLETE id=${task.id}")
