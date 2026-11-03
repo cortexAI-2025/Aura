@@ -43,7 +43,8 @@ compose-viewmodel = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-
 navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hilt-navigation" }
 
-# Hilt
+# Hilt / DI
+javax-inject = { group = "javax.inject", name = "javax.inject", version = "1" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 

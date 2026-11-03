@@ -18,6 +18,7 @@ dependencies {
     api(libs.coroutines.core)
     api(libs.coroutines.android)
     api(libs.timber)
+    api(libs.javax.inject)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
 }
