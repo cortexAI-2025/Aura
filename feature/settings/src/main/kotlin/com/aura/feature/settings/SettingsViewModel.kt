@@ -177,10 +177,10 @@ class SettingsViewModel @Inject constructor(
     fun resetProfile() { personalization.reset(); toast("Personnalisation réinitialisée.") }
 
     // ── Data erasure ──
-    fun eraseConversations() = viewModelScope.launch { wiper.eraseConversations(); toast("Conversations supprimées."); refresh() }
-    fun eraseMemory() = viewModelScope.launch { wiper.eraseMemory(); toast("Mémoire effacée.") }
+    fun eraseConversations() { viewModelScope.launch { wiper.eraseConversations(); toast("Conversations supprimées."); refresh() } }
+    fun eraseMemory() { viewModelScope.launch { wiper.eraseMemory(); toast("Mémoire effacée.") } }
     fun eraseKeys() { wiper.eraseKeysAndAiSettings(); refresh(); toast("Clés et choix IA supprimés.") }
-    fun eraseAll() = viewModelScope.launch { wiper.eraseAll(); refresh(); toast("Toutes les données locales ont été effacées.") }
+    fun eraseAll() { viewModelScope.launch { wiper.eraseAll(); refresh(); toast("Toutes les données locales ont été effacées.") } }
 
     // ── Local mode ──
     fun importModel(uri: Uri) {
