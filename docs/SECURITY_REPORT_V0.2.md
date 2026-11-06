@@ -7,7 +7,7 @@
 * La clé n'est jamais réaffichée après enregistrement ; `ProviderConfig.toString()` ne l'imprime pas.
 
 ## Réseau
-* HTTPS obligatoire (`EndpointPolicy`) : HTTP refusé, hôtes locaux/privés refusés hors tests, pas de redirections suivies
+* HTTPS obligatoire (`EndpointPolicy`) : HTTP refusé (seule exception : boucle locale, réservée aux tests), pas de redirections suivies
   (la clé n'est donc jamais renvoyée vers un autre hôte), `cleartextTrafficPermitted=false`.
 * La clé n'est envoyée que dans l'en-tête `Authorization`, jamais dans l'URL.
 * Aucune requête vers un serveur AIWORKPAY ; seuls Z.ai / OpenRouter (choisis par l'utilisateur) sont contactés.
