@@ -106,7 +106,7 @@ class ZaiProviderTest {
     }
 
     @Test fun `redirects are never followed so the key cannot leak to another host`() = runBlocking {
-        server.handler = { ex -> ex.responseHeaders.add("Location", "http://127.0.0.1:1/steal"); ex.sendResponseHeaders(302, -1) }
+        server.handler = { ex -> server.respond(ex, 302, "", mapOf("Location" to "http://127.0.0.1:1/steal")) }
         val r = provider.testConnection(config) as ConnectionResult.Failure
         assertEquals(1, server.requests.size)
         assertNotEquals(ErrorKind.NETWORK, r.error.kind) // we got the 302 itself, we did not chase it
