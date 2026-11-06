@@ -48,7 +48,7 @@ abstract class AuraDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_conversationId` ON `messages` (`conversationId`)")
                 db.execSQL(
                     "INSERT INTO `conversations` (`id`, `title`, `createdAtMs`, `updatedAtMs`) " +
-                        "SELECT 'legacy', 'Conversation précédente', MIN(`timestampMs`), MAX(`timestampMs`) FROM `messages` WHERE EXISTS (SELECT 1 FROM `messages`)",
+                        "SELECT 'legacy', 'Conversation précédente', `lo`, `hi` FROM (SELECT MIN(`timestampMs`) AS `lo`, MAX(`timestampMs`) AS `hi`, COUNT(*) AS `n` FROM `messages`) WHERE `n` > 0",
                 )
                 db.execSQL("UPDATE `messages` SET `conversationId` = 'legacy' WHERE `conversationId` = ''")
 
