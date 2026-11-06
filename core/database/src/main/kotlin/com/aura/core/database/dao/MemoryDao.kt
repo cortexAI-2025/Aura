@@ -22,8 +22,14 @@ interface MemoryDao {
     @Query("UPDATE memories SET accessedAtMs = :nowMs, accessCount = accessCount + 1 WHERE id = :id")
     suspend fun touchMemory(id: String, nowMs: Long)
 
+    @Query("SELECT * FROM memories")
+    suspend fun listAll(): List<MemoryEntity>
+
     @Query("DELETE FROM memories WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM memories")
+    suspend fun deleteAll()
 
     @Query("DELETE FROM memories WHERE id IN (SELECT id FROM memories ORDER BY importance ASC, accessedAtMs ASC LIMIT :excess)")
     suspend fun pruneOldest(excess: Int)

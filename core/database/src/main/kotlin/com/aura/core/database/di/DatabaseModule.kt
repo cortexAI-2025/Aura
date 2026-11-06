@@ -17,6 +17,7 @@ object DatabaseModule {
     fun provideDatabase(@ApplicationContext context: Context): AuraDatabase =
         AuraDatabase.create(context)
 
+    @Provides fun provideConversationDao(db: AuraDatabase): ConversationDao = db.conversationDao()
     @Provides fun provideMessageDao(db: AuraDatabase): MessageDao = db.messageDao()
     @Provides fun provideMemoryDao(db: AuraDatabase): MemoryDao = db.memoryDao()
     @Provides fun provideGoalDao(db: AuraDatabase): GoalDao = db.goalDao()

@@ -22,6 +22,9 @@ import javax.inject.Singleton
 class ActionExecutor @Inject constructor(
     private val handlers: Map<ToolType, @JvmSuppressWildcards ToolHandler>,
 ) {
+    /** Tools that really have a handler on this device: the only ones the model is told about. */
+    val availableTools: Set<ToolType> get() = handlers.keys
+
     suspend fun execute(action: AgentAction): ActionResult {
         val toolName = action.tool.displayName()
         val handler = handlers[action.tool]

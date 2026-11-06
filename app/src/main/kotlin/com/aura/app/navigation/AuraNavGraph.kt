@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.*
@@ -18,15 +20,19 @@ import androidx.navigation.compose.rememberNavController
 import com.aura.core.ui.theme.AuraVoid
 import com.aura.feature.chat.ChatScreen
 import com.aura.feature.goals.GoalsScreen
+import com.aura.feature.memory.MemoryScreen
+import com.aura.feature.settings.SettingsScreen
 import com.aura.feature.timeline.TimelineScreen
 
 sealed class AuraRoute(val route: String, val label: String, val icon: @Composable () -> Unit) {
     data object Chat : AuraRoute("chat", "Chat", { Icon(Icons.Default.Chat, "Chat") })
     data object Timeline : AuraRoute("timeline", "Activity", { Icon(Icons.Default.Timeline, "Activity") })
     data object Goals : AuraRoute("goals", "Goals", { Icon(Icons.Default.Star, "Goals") })
+    data object Memory : AuraRoute("memory", "Mémoire", { Icon(Icons.Default.Memory, "Mémoire") })
+    data object Settings : AuraRoute("settings", "Réglages", { Icon(Icons.Default.Settings, "Réglages") })
 }
 
-private val bottomNavItems = listOf(AuraRoute.Chat, AuraRoute.Timeline, AuraRoute.Goals)
+private val bottomNavItems = listOf(AuraRoute.Chat, AuraRoute.Memory, AuraRoute.Goals, AuraRoute.Timeline, AuraRoute.Settings)
 
 @Composable
 fun AuraNavGraph() {
@@ -61,7 +67,17 @@ fun AuraNavGraph() {
             startDestination = AuraRoute.Chat.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(AuraRoute.Chat.route) { ChatScreen() }
+            composable(AuraRoute.Chat.route) {
+                ChatScreen(onOpenSettings = {
+                    navController.navigate(AuraRoute.Settings.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                })
+            }
+            composable(AuraRoute.Memory.route) { MemoryScreen() }
+            composable(AuraRoute.Settings.route) { SettingsScreen() }
             composable(AuraRoute.Timeline.route) { TimelineScreen() }
             composable(AuraRoute.Goals.route) { GoalsScreen() }
         }

@@ -14,6 +14,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    // Robolectric needs the merged resources/manifest to boot a fake Android runtime for DAO tests.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 // Room 2.6+ with KSP requires an explicit schema export location when exportSchema = true.
@@ -29,4 +31,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.coroutines.test)
 }

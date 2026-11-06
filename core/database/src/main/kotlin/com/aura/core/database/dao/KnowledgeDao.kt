@@ -21,6 +21,12 @@ interface KnowledgeDao {
     @Query("SELECT n.* FROM knowledge_nodes n INNER JOIN knowledge_edges e ON n.id = e.toId WHERE e.fromId = :fromId AND e.relation = :relation")
     suspend fun getNeighborsByRelation(fromId: String, relation: String): List<KnowledgeNodeEntity>
 
+    @Query("DELETE FROM knowledge_nodes")
+    suspend fun deleteAllNodes()
+
+    @Query("DELETE FROM knowledge_edges")
+    suspend fun deleteAllEdges()
+
     @Query("SELECT * FROM knowledge_nodes WHERE label LIKE '%' || :query || '%' LIMIT 20")
     suspend fun searchNodes(query: String): List<KnowledgeNodeEntity>
 }

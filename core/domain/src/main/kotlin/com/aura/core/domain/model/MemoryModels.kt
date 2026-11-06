@@ -14,10 +14,20 @@ data class Memory(
     val accessCount: Int = 0,
     val tags: List<String> = emptyList(),
     val linkedGoalId: String? = null,
+    /** Who created it. AUTO memories exist only when the user enabled automatic memorisation. */
+    val source: MemorySource = MemorySource.USER,
+    /** A similar memory exists (possible duplicate or contradiction): the user should check. */
+    val needsReview: Boolean = false,
+    val relatedId: String? = null,
+    val updatedAt: Instant = Instant.now(),
+    /** Vector space of [embedding]: `stub` (no meaning) or a real model id. Vectors are only compared within one space. */
+    val embeddingKind: String = "stub",
 ) {
     override fun equals(other: Any?) = other is Memory && id == other.id
     override fun hashCode() = id.hashCode()
 }
+
+enum class MemorySource { USER, AUTO }
 
 enum class MemoryType {
     /** Short-lived working context (current task). */

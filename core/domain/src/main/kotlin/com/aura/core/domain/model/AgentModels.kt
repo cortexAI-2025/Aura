@@ -9,7 +9,28 @@ data class Message(
     val content: String,
     val timestamp: Instant = Instant.now(),
     val metadata: Map<String, String> = emptyMap(),
+    /** Set on assistant messages produced by a cloud provider (shown as the "active model" and used for consumption). */
+    val providerId: String? = null,
+    val model: String? = null,
+    val promptTokens: Int? = null,
+    val completionTokens: Int? = null,
+    val finishReason: String? = null,
 )
+
+/** A chat thread. */
+data class Conversation(
+    val id: String,
+    val title: String,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+)
+
+/** Tokens consumed, as reported by the provider APIs and summed locally. */
+data class UsageTotals(val promptTokens: Long = 0, val completionTokens: Long = 0, val requests: Int = 0) {
+    val totalTokens: Long get() = promptTokens + completionTokens
+}
+
+data class ModelUsage(val providerId: String?, val model: String?, val totals: UsageTotals)
 
 enum class MessageRole { USER, ASSISTANT, SYSTEM, TOOL }
 

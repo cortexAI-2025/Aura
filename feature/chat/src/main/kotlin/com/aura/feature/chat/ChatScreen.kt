@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.HeadsetMic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
@@ -45,14 +46,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.aura.ai.engine.OpenRouterModel
+import com.aura.core.domain.model.Conversation
 import com.aura.core.ui.component.AuraStatusChip
 import com.aura.core.ui.component.AuraThinkingIndicator
 import com.aura.core.ui.theme.*
 import java.util.Locale
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
+fun ChatScreen(onOpenSettings: () -> Unit = {}, viewModel: ChatViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val appContext = LocalContext.current
@@ -80,6 +81,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         val observer = LifecycleEventObserver { _, event ->
             // Android forbids background microphone capture: stop cleanly instead of failing.
             if (event == Lifecycle.Event.ON_STOP) viewModel.stopHandsFree()
+            // Back from Settings: pick up a new provider / model / key.
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshAiState()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -88,7 +91,6 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         uri?.let(viewModel::importModel)
     }
     val pickModel = { modelPicker.launch(arrayOf("*/*")) }
-    var showSettings by remember { mutableStateOf(false) }
 
     // Speech-to-text via the system recogniser (no RECORD_AUDIO permission needed in this app).
     val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -112,26 +114,6 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         }
     }
 
-    LaunchedEffect(showSettings) { if (showSettings) viewModel.loadFreeModels() }
-
-    if (showSettings) {
-        CloudSettingsDialog(
-            enabled = state.cloudEnabled,
-            model = state.cloudModel,
-            hasKey = state.hasApiKey,
-            autoFallback = state.autoFallback,
-            freeModels = state.freeModels,
-            modelsLoading = state.modelsLoading,
-            modelsError = state.modelsError,
-            onRefreshModels = viewModel::loadFreeModels,
-            onDismiss = { showSettings = false },
-            onSave = { enabled, key, model, fallback ->
-                viewModel.saveCloudSettings(enabled, key, model, fallback)
-                showSettings = false
-            },
-        )
-    }
-
     // Scroll to bottom when new messages arrive
     LaunchedEffect(state.messages.size, state.isThinking) {
         if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.size - 1)
@@ -142,8 +124,15 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
         topBar = {
             AuraChatTopBar(
                 state.modelStatus,
+                activeLabel = state.activeLabel,
+                conversations = state.conversations,
+                currentId = state.currentConversationId,
+                onNewConversation = viewModel::newConversation,
+                onSelectConversation = viewModel::selectConversation,
+                onRenameConversation = viewModel::renameConversation,
+                onDeleteConversation = viewModel::deleteConversation,
                 onImportModel = pickModel,
-                onOpenSettings = { showSettings = true },
+                onOpenSettings = onOpenSettings,
                 speakReplies = state.speakReplies,
                 onToggleSpeak = { viewModel.setSpeakReplies(!state.speakReplies) },
             )
@@ -187,9 +176,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
             contentPadding = PaddingValues(vertical = 12.dp),
         ) {
             if (state.modelStatus == ModelStatusUi.NOT_FOUND || state.modelStatus == ModelStatusUi.ERROR) {
-                item { ModelSetupCard(loading = false, onImport = pickModel, onOpenCloud = { showSettings = true }) }
+                item { ModelSetupCard(loading = false, onImport = pickModel, onOpenCloud = onOpenSettings) }
             } else if (state.modelStatus == ModelStatusUi.LOADING) {
-                item { ModelSetupCard(loading = true, onImport = pickModel, onOpenCloud = { showSettings = true }) }
+                item { ModelSetupCard(loading = true, onImport = pickModel, onOpenCloud = onOpenSettings) }
             }
 
             items(state.messages, key = { it.hashCode() }) { msg ->
@@ -201,6 +190,13 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
                 item {
                     AgentBubble(text = state.streamingText, isStreaming = true)
                 }
+            }
+
+            state.contextInfo?.let { info ->
+                item { Text(info, style = MaterialTheme.typography.labelSmall, color = AuraOnSurfaceDim, modifier = Modifier.padding(horizontal = 8.dp)) }
+            }
+            state.notice?.let { n ->
+                item { Text(n, style = MaterialTheme.typography.labelSmall, color = AuraWarning, modifier = Modifier.padding(horizontal = 8.dp)) }
             }
 
             // Thinking indicator
@@ -246,13 +242,53 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
 @Composable
 private fun AuraChatTopBar(
     modelStatus: ModelStatusUi,
+    activeLabel: String,
+    conversations: List<Conversation>,
+    currentId: String,
+    onNewConversation: () -> Unit,
+    onSelectConversation: (String) -> Unit,
+    onRenameConversation: (String, String) -> Unit,
+    onDeleteConversation: (String) -> Unit,
     onImportModel: () -> Unit,
     onOpenSettings: () -> Unit,
     speakReplies: Boolean,
     onToggleSpeak: () -> Unit,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val current = conversations.firstOrNull { it.id == currentId }
+
     TopAppBar(
-        title = { Text("Aura", style = MaterialTheme.typography.titleLarge) },
+        title = {
+            Box {
+                Row(
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { menuOpen = true }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        current?.title?.takeIf { it.isNotBlank() } ?: "Aura",
+                        style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                        modifier = Modifier.widthIn(max = 150.dp),
+                    )
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Conversations")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("＋ Nouvelle conversation") }, onClick = { menuOpen = false; onNewConversation() })
+                    conversations.forEach { c ->
+                        DropdownMenuItem(
+                            text = { Text(c.title.ifBlank { "Conversation" }, maxLines = 1, color = if (c.id == currentId) AuraPulse else AuraOnSurface) },
+                            onClick = { menuOpen = false; onSelectConversation(c.id) },
+                        )
+                    }
+                    if (current != null) {
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Renommer") }, onClick = { menuOpen = false; renaming = true })
+                        DropdownMenuItem(text = { Text("Supprimer cette conversation", color = AuraError) }, onClick = { menuOpen = false; confirmDelete = true })
+                    }
+                }
+            }
+        },
         actions = {
             IconButton(onClick = onToggleSpeak) {
                 Icon(
@@ -261,23 +297,43 @@ private fun AuraChatTopBar(
                     tint = if (speakReplies) AuraPulse else AuraOnSurfaceDim,
                 )
             }
-            IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Paramètres IA") }
+            IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Réglages") }
             val (label, color) = when (modelStatus) {
-                ModelStatusUi.READY -> "On-device" to AuraSuccess
-                ModelStatusUi.LOADING -> "Loading…" to AuraWarning
-                ModelStatusUi.NOT_FOUND -> "No model" to AuraError
-                ModelStatusUi.CHECKING -> "Checking" to AuraOnSurfaceDim
-                ModelStatusUi.ERROR -> "Load failed" to AuraError
-                ModelStatusUi.CLOUD -> "OpenRouter" to AuraGlow
+                ModelStatusUi.READY -> "Local" to AuraSuccess
+                ModelStatusUi.LOADING -> "Chargement…" to AuraWarning
+                ModelStatusUi.NOT_FOUND -> "Aucun modèle" to AuraError
+                ModelStatusUi.CHECKING -> "Vérification" to AuraOnSurfaceDim
+                ModelStatusUi.ERROR -> "Échec du chargement" to AuraError
+                ModelStatusUi.CLOUD -> activeLabel.ifBlank { "Cloud" } to AuraGlow
             }
             val canImport = modelStatus == ModelStatusUi.NOT_FOUND || modelStatus == ModelStatusUi.ERROR
             AuraStatusChip(
                 label, color,
-                Modifier.padding(end = 12.dp).clickable(enabled = canImport, onClick = onImportModel),
+                Modifier.padding(end = 12.dp).widthIn(max = 150.dp).clickable(onClick = if (canImport) onImportModel else onOpenSettings),
             )
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = AuraVoid),
     )
+
+    if (renaming && current != null) {
+        var title by remember(current.id) { mutableStateOf(current.title) }
+        AlertDialog(
+            onDismissRequest = { renaming = false },
+            title = { Text("Renommer la conversation") },
+            text = { OutlinedTextField(value = title, onValueChange = { title = it.take(60) }, singleLine = true) },
+            confirmButton = { TextButton(onClick = { onRenameConversation(current.id, title); renaming = false }) { Text("Enregistrer") } },
+            dismissButton = { TextButton(onClick = { renaming = false }) { Text("Annuler") } },
+        )
+    }
+    if (confirmDelete && current != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Supprimer cette conversation ?") },
+            text = { Text("Les messages de « ${current.title.ifBlank { "Conversation" }} » seront effacés de l'appareil. Cette action est définitive.") },
+            confirmButton = { TextButton(onClick = { onDeleteConversation(current.id); confirmDelete = false }) { Text("Supprimer", color = AuraError) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+        )
+    }
 }
 
 @Composable
@@ -329,123 +385,6 @@ private fun openFirst(context: Context, vararg intents: Intent) {
 }
 
 @Composable
-private fun CloudSettingsDialog(
-    enabled: Boolean,
-    model: String,
-    hasKey: Boolean,
-    autoFallback: Boolean,
-    freeModels: List<OpenRouterModel>,
-    modelsLoading: Boolean,
-    modelsError: String?,
-    onRefreshModels: () -> Unit,
-    onDismiss: () -> Unit,
-    onSave: (enabled: Boolean, apiKey: String, model: String, autoFallback: Boolean) -> Unit,
-) {
-    var fallback by remember { mutableStateOf(autoFallback) }
-    var useCloud by remember { mutableStateOf(enabled) }
-    var key by remember { mutableStateOf("") }
-    var modelId by remember { mutableStateOf(model) }
-    var menuOpen by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = AuraSurface,
-        title = { Text("IA cloud (OpenRouter)") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Utiliser OpenRouter", modifier = Modifier.weight(1f))
-                    Switch(checked = useCloud, onCheckedChange = { useCloud = it })
-                }
-                OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    label = { Text(if (hasKey) "Clé API (enregistrée — vide = conserver)" else "Clé API OpenRouter") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Text("Modèle", style = MaterialTheme.typography.labelLarge, color = AuraOnSurfaceDim)
-                Box {
-                    OutlinedButton(onClick = { menuOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            (freeModels.firstOrNull { it.id == modelId }?.name ?: "Choisir un modèle gratuit") + "  ▾",
-                            maxLines = 1,
-                        )
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        freeModels.forEach { m ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(m.name, style = MaterialTheme.typography.bodyMedium)
-                                        Text(
-                                            m.id + (m.expires?.let { " · expire le $it" } ?: ""),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = AuraOnSurfaceDim,
-                                        )
-                                    }
-                                },
-                                onClick = { modelId = m.id; menuOpen = false },
-                            )
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = modelId,
-                    onValueChange = { modelId = it },
-                    label = { Text("ou saisir un identifiant de modèle") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onRefreshModels, enabled = !modelsLoading) { Text("↻ Actualiser la liste") }
-                    Text(
-                        when {
-                            modelsLoading -> "Chargement…"
-                            modelsError != null -> modelsError
-                            else -> "${freeModels.size} modèles gratuits"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AuraOnSurfaceDim,
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Si le modèle gratuit est saturé (erreur 429), essayer d'autres modèles gratuits " +
-                            "(autres fournisseurs)",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(checked = fallback, onCheckedChange = { fallback = it })
-                }
-
-                Text(
-                    "Attention : en mode cloud, vos messages et des extraits de votre mémoire sont envoyés à " +
-                        "OpenRouter. Désactivé, tout reste sur l'appareil. La clé est stockée chiffrée.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AuraOnSurfaceDim,
-                )
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(useCloud, key, modelId, fallback) }) { Text("Enregistrer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
-    )
-}
-
-@Composable
 private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit, onOpenCloud: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -469,7 +408,7 @@ private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit, onOpenCloud: 
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = AuraPulse)
             } else {
                 Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer un modèle") }
-                OutlinedButton(onClick = onOpenCloud, modifier = Modifier.fillMaxWidth()) { Text("Ou utiliser OpenRouter (cloud)") }
+                OutlinedButton(onClick = onOpenCloud, modifier = Modifier.fillMaxWidth()) { Text("Ou configurer un fournisseur cloud (Z.ai…)") }
             }
         }
     }
@@ -479,7 +418,15 @@ private fun ModelSetupCard(loading: Boolean, onImport: () -> Unit, onOpenCloud: 
 private fun ChatBubble(message: ChatMessage, onSpeak: (String) -> Unit) {
     when (message) {
         is ChatMessage.User -> UserBubble(message.message.content)
-        is ChatMessage.Agent -> AgentBubble(message.message.content, onSpeak = { onSpeak(message.message.content) })
+        is ChatMessage.Agent -> AgentBubble(
+            message.message.content,
+            onSpeak = { onSpeak(message.message.content) },
+            caption = message.message.let { m ->
+                val tokens = (m.promptTokens ?: 0) + (m.completionTokens ?: 0)
+                listOfNotNull(m.model, tokens.takeIf { it > 0 }?.let { "$it tokens" }, if (m.finishReason == "truncated") "réponse tronquée" else null)
+                    .joinToString(" · ").ifEmpty { null }
+            },
+        )
         is ChatMessage.ActionLog -> ActionLogBubble(message.description, message.success)
         is ChatMessage.Thinking -> AuraThinkingIndicator()
     }
@@ -499,7 +446,7 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AgentBubble(text: String, isStreaming: Boolean = false, onSpeak: (() -> Unit)? = null) {
+private fun AgentBubble(text: String, isStreaming: Boolean = false, onSpeak: (() -> Unit)? = null, caption: String? = null) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Surface(
             modifier = Modifier.widthIn(max = 300.dp),
@@ -508,6 +455,7 @@ private fun AgentBubble(text: String, isStreaming: Boolean = false, onSpeak: (()
         ) {
             Column(modifier = Modifier.padding(12.dp, 10.dp)) {
                 Text(text, style = MaterialTheme.typography.bodyMedium, color = AuraOnSurface)
+                caption?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = AuraOnSurfaceDim, modifier = Modifier.padding(top = 4.dp)) }
                 if (isStreaming) {
                     Spacer(Modifier.height(4.dp))
                     AuraThinkingIndicator()

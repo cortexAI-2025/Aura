@@ -9,9 +9,8 @@ import android.speech.tts.UtteranceProgressListener
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aura.agent.core.*
-import com.aura.ai.engine.LLMProvider
-import com.aura.ai.engine.LLMSettings
-import com.aura.ai.engine.OpenRouterCatalog
+import com.aura.ai.provider.ProviderRegistry
+import com.aura.ai.settings.AiSettings
 import com.aura.core.domain.model.AgentAction
 import com.aura.core.domain.model.Message
 import com.aura.core.domain.model.MessageRole
@@ -33,8 +32,8 @@ class ChatViewModel @Inject constructor(
     private val agentEngine: AgentEngine,
     private val conversationRepository: ConversationRepository,
     private val llmLoader: LLMLoader,
-    private val llmSettings: LLMSettings,
-    private val catalog: OpenRouterCatalog,
+    private val aiSettings: AiSettings,
+    private val registry: ProviderRegistry,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -77,8 +76,9 @@ class ChatViewModel @Inject constructor(
     init {
         _uiState.update { it.copy(speakReplies = prefs.getBoolean(KEY_SPEAK, true)) }
         loadHistory()
+        observeConversations()
         observeServiceEvents()
-        refreshCloudState()
+        refreshAiState()
         checkModelStatus()
     }
 
@@ -96,8 +96,11 @@ class ChatViewModel @Inject constructor(
 
     private fun observeServiceEvents() {
         viewModelScope.launch {
-            AuraAgentService.agentEvents.collect { event ->
-                handleAgentEvent(event)
+            AuraAgentService.agentEvents.collect { tagged ->
+                val open = _uiState.value.currentConversationId
+                // Events of another conversation (answer still running after a switch) are ignored here;
+                // the finished answer is in the database and shows up when that conversation is opened.
+                if (open.isEmpty() || tagged.conversationId == open) handleAgentEvent(tagged.event)
             }
         }
     }
@@ -116,47 +119,34 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private fun refreshCloudState() {
-        _uiState.update {
-            it.copy(
-                cloudEnabled = llmSettings.provider == LLMProvider.OPENROUTER,
-                cloudModel = llmSettings.model,
-                hasApiKey = llmSettings.hasApiKey,
-                autoFallback = llmSettings.autoFallback,
-            )
-        }
-    }
-
-    /** Opt in/out of OpenRouter. The key is stored encrypted on-device; blank keeps the saved one. */
-    fun saveCloudSettings(enabled: Boolean, apiKey: String, model: String, autoFallback: Boolean) {
+    /** Re-reads the provider / model chosen in Settings (called on every return to the chat). */
+    fun refreshAiState() {
+        val provider = aiSettings.activeProvider()?.takeIf { aiSettings.cloudActive }
+        val label = if (provider != null) "${provider.displayName} · ${aiSettings.model(provider.id)}" else "Local"
+        _uiState.update { it.copy(activeLabel = label) }
         viewModelScope.launch(Dispatchers.IO) {
-            if (apiKey.isNotBlank()) llmSettings.setApiKey(apiKey.trim())
-            llmSettings.model = model.trim().ifBlank { LLMSettings.DEFAULT_MODEL }
-            llmSettings.autoFallback = autoFallback
-            if (enabled && !llmSettings.hasApiKey) {
-                _uiState.update { it.copy(error = "Clé API OpenRouter requise pour activer le mode cloud") }
-            }
-            llmSettings.provider = if (enabled && llmSettings.hasApiKey) LLMProvider.OPENROUTER else LLMProvider.LOCAL
-            refreshCloudState()
-            if (!llmSettings.cloudActive) runCatching { llmLoader.loadIfNeeded() }
+            if (!aiSettings.cloudActive) runCatching { llmLoader.loadIfNeeded() }
             checkModelStatus()
         }
     }
 
-    /** Refresh the dropdown of free OpenRouter models (public endpoint, no key needed). */
-    fun loadFreeModels() {
-        if (_uiState.value.modelsLoading) return
+    private fun observeConversations() {
         viewModelScope.launch {
-            _uiState.update { it.copy(modelsLoading = true, modelsError = null) }
-            catalog.fetchFreeModels()
-                .onSuccess { list -> _uiState.update { it.copy(freeModels = list, modelsLoading = false) } }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(modelsLoading = false, modelsError = "Liste hors ligne (${e.message ?: "erreur réseau"})")
-                    }
+            // Make sure a current conversation exists before observing (first launch).
+            conversationRepository.currentConversationId()
+            launch { conversationRepository.observeConversations().collect { list -> _uiState.update { it.copy(conversations = list) } } }
+            launch {
+                conversationRepository.observeCurrentConversationId().collect { id ->
+                    _uiState.update { it.copy(currentConversationId = id, streamingText = "", isThinking = false, notice = null, contextInfo = null) }
                 }
+            }
         }
     }
+
+    fun newConversation() { viewModelScope.launch { conversationRepository.createConversation() } }
+    fun selectConversation(id: String) { viewModelScope.launch { conversationRepository.selectConversation(id) } }
+    fun renameConversation(id: String, title: String) { viewModelScope.launch { conversationRepository.renameConversation(id, title) } }
+    fun deleteConversation(id: String) { viewModelScope.launch { conversationRepository.deleteConversation(id) } }
 
     /** Copy a model file chosen by the user into the app, then load it. */
     fun importModel(uri: Uri) {
@@ -191,11 +181,16 @@ class ChatViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 inputText = "", isThinking = true, streamingText = "", error = null, partialText = "",
+                notice = null, contextInfo = null,
                 handsFree = if (it.handsFree != HandsFreeState.OFF) HandsFreeState.THINKING else HandsFreeState.OFF,
             )
         }
         armWatchdog()
-        AuraAgentService.processMessage(context, text)
+        AuraAgentService.processMessage(
+            context, text,
+            conversationId = _uiState.value.currentConversationId.ifEmpty { null },
+            voiceMode = viaVoice || _uiState.value.handsFree != HandsFreeState.OFF,
+        )
     }
 
     fun confirmAction(action: AgentAction) {
@@ -444,6 +439,14 @@ class ChatViewModel @Inject constructor(
                 if (_uiState.value.handsFree != HandsFreeState.OFF) stopHandsFree(event.message)
                 _uiState.update { it.copy(isThinking = false, error = event.message) }
             }
+            is AgentEvent.ContextUsed -> if (event.cloud) {
+                val parts = listOfNotNull(
+                    event.memories.takeIf { it > 0 }?.let { "$it souvenir(s)" },
+                    event.goals.takeIf { it > 0 }?.let { "$it objectif(s)" },
+                )
+                _uiState.update { it.copy(contextInfo = "Envoyé au fournisseur cloud avec votre message : " + (parts.joinToString(", ").ifEmpty { "aucun souvenir ni objectif" })) }
+            }
+            is AgentEvent.Notice -> _uiState.update { it.copy(notice = event.text) }
             else -> {}
         }
     }
