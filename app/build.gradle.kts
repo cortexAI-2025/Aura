@@ -14,8 +14,8 @@ android {
         applicationId = "com.aura.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-mvp"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -73,6 +73,8 @@ dependencies {
     implementation(project(":feature:chat"))
     implementation(project(":feature:timeline"))
     implementation(project(":feature:goals"))
+    implementation(project(":feature:settings"))
+    implementation(project(":feature:memory"))
 
     implementation(libs.core.ktx)
     implementation(platform(libs.compose.bom))

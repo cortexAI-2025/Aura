@@ -3,10 +3,13 @@ package com.aura.agent.core
 import com.aura.agent.actions.ActionExecutor
 import com.aura.agent.actions.ActionGuard
 import com.aura.agent.actions.ToolHandler
-import com.aura.agent.memory.MemoryManager
+import com.aura.agent.memory.logic.MemoryService
+import com.aura.ai.provider.ProviderRegistry
+import com.aura.ai.provider.ZaiProvider
+import com.aura.ai.settings.AiSettings
+import com.aura.ai.settings.InMemoryKeyValueStore
 import com.aura.ai.engine.LLMEngine
 import com.aura.ai.engine.LLMToken
-import com.aura.ai.engine.PromptBuilder
 import com.aura.core.common.AuraLogDelegate
 import com.aura.core.common.AuraLogger
 import com.aura.core.domain.model.*
@@ -111,13 +114,13 @@ class AuraAgentIntegrationTest {
         )
 
         // ── Mocks for external dependencies ───────────────────────────────────
-        val memoryManager = mockk<MemoryManager>(relaxed = true)
         val convRepo = mockk<ConversationRepository> {
-            coEvery { getRecentMessages(any()) } returns emptyList()
+            coEvery { currentConversationId() } returns "c1"
+            coEvery { getRecentMessages(any<String>(), any()) } returns emptyList()
         }
-        val goalRepo = mockk<GoalRepository>(relaxed = true)
         val retrieveContext = mockk<RetrieveContextUseCase>()
-        coEvery { retrieveContext(any(), any()) } returns AgentContext(emptyList(), emptyList())
+        coEvery { retrieveContext(any(), any(), any()) } returns AgentContext(emptyList(), emptyList())
+        val personalization = mockk<PersonalizationStore> { every { current() } returns PersonalizationProfile.DEFAULT }
         val userRulesStore = mockk<UserRulesStore> {
             coEvery { getRules() } returns testRules
         }
@@ -129,15 +132,15 @@ class AuraAgentIntegrationTest {
         )
         val agentEngine = AgentEngine(
             llmEngine = llmEngine,
-            memoryManager = memoryManager,
+            memory = mockk<MemoryService>(relaxed = true),
             actionExecutor = ActionExecutor(handlers),
             actionGuard = ActionGuard(),
-            promptBuilder = PromptBuilder(),
             conversationRepository = convRepo,
-            goalRepository = goalRepo,
             retrieveContext = retrieveContext,
             responseParser = LLMResponseParser(),
             userRulesStore = userRulesStore,
+            personalization = personalization,
+            aiSettings = AiSettings(InMemoryKeyValueStore(), ProviderRegistry(listOf(ZaiProvider()))),
         )
 
         // ── Step 1: AuraAgent logs TASK + ENQUEUED ────────────────────────────

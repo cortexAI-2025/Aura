@@ -1,8 +1,7 @@
 package com.aura.feature.chat
 
-import com.aura.ai.engine.OpenRouterCatalog
-import com.aura.ai.engine.OpenRouterModel
 import com.aura.core.domain.model.AgentAction
+import com.aura.core.domain.model.Conversation
 import com.aura.core.domain.model.Message
 
 data class ChatUiState(
@@ -13,17 +12,18 @@ data class ChatUiState(
     val pendingAction: AgentAction? = null,
     val modelStatus: ModelStatusUi = ModelStatusUi.CHECKING,
     val error: String? = null,
-    val cloudEnabled: Boolean = false,
-    val cloudModel: String = "",
-    val hasApiKey: Boolean = false,
-    val autoFallback: Boolean = true,
+    /** "Z.ai · glm-4.7-flash" in cloud mode, "Local" otherwise: the model that will answer. */
+    val activeLabel: String = "",
     val ttsProblem: Boolean = false,
     val handsFree: HandsFreeState = HandsFreeState.OFF,
     val partialText: String = "",
     val speakReplies: Boolean = false,
-    val freeModels: List<OpenRouterModel> = OpenRouterCatalog.FALLBACK,
-    val modelsLoading: Boolean = false,
-    val modelsError: String? = null,
+    val conversations: List<Conversation> = emptyList(),
+    val currentConversationId: String = "",
+    /** Non-fatal remark from the agent (long conversation trimmed, reply cut short). */
+    val notice: String? = null,
+    /** What was sent along with the question in cloud mode ("2 souvenirs, 1 objectif"). */
+    val contextInfo: String? = null,
 )
 
 sealed interface ChatMessage {

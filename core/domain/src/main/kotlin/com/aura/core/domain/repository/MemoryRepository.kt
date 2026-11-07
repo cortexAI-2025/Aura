@@ -9,6 +9,9 @@ interface MemoryRepository {
     suspend fun store(memory: Memory)
     suspend fun retrieve(id: String): Memory?
     suspend fun search(queryEmbedding: FloatArray, topK: Int = 5, type: MemoryType? = null): List<MemoryResult>
+
+    /** Retrieves the memories most relevant to a plain-text query (semantic when embeddings are real, lexical otherwise). */
+    suspend fun recall(query: String, topK: Int = 5): List<MemoryResult>
     suspend fun delete(id: String)
     fun observeAll(type: MemoryType? = null): Flow<List<Memory>>
     suspend fun prune(maxCount: Int = 10_000)

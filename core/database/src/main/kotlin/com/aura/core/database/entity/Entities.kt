@@ -1,16 +1,32 @@
 package com.aura.core.database.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.time.Instant
 
-@Entity(tableName = "messages")
+@Entity(tableName = "conversations")
+data class ConversationEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val createdAtMs: Long,
+    val updatedAtMs: Long,
+)
+
+@Entity(tableName = "messages", indices = [Index("conversationId")])
 data class MessageEntity(
     @PrimaryKey val id: String,
     val role: String,
     val content: String,
     val timestampMs: Long = Instant.now().toEpochMilli(),
     val metadata: String = "{}",
+    @ColumnInfo(defaultValue = "''") val conversationId: String = "",
+    val providerId: String? = null,
+    val model: String? = null,
+    val promptTokens: Int? = null,
+    val completionTokens: Int? = null,
+    val finishReason: String? = null,
 )
 
 @Entity(tableName = "memories")
@@ -26,6 +42,11 @@ data class MemoryEntity(
     val accessCount: Int = 0,
     val tags: String = "",
     val linkedGoalId: String? = null,
+    @ColumnInfo(defaultValue = "'USER'") val source: String = "USER",
+    @ColumnInfo(defaultValue = "0") val needsReview: Boolean = false,
+    val relatedId: String? = null,
+    @ColumnInfo(defaultValue = "0") val updatedAtMs: Long = Instant.now().toEpochMilli(),
+    @ColumnInfo(defaultValue = "'stub'") val embeddingKind: String = "stub",
 ) {
     override fun equals(other: Any?) = other is MemoryEntity && id == other.id
     override fun hashCode() = id.hashCode()

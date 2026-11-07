@@ -2,8 +2,10 @@ package com.aura.core.data.di
 
 import com.aura.core.data.repository.ConversationRepositoryImpl
 import com.aura.core.data.repository.GoalRepositoryImpl
+import com.aura.core.data.repository.RoomMemoryStore
 import com.aura.core.domain.repository.ConversationRepository
 import com.aura.core.domain.repository.GoalRepository
+import com.aura.core.domain.repository.MemoryStore
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -18,4 +20,7 @@ abstract class DataModule {
 
     @Binds @Singleton
     abstract fun bindGoalRepository(impl: GoalRepositoryImpl): GoalRepository
+
+    @Binds @Singleton
+    abstract fun bindMemoryStore(impl: RoomMemoryStore): MemoryStore
 }

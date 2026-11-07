@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.aura.ai.engine.LLMEngine
-import com.aura.ai.engine.LLMSettings
+import com.aura.ai.settings.AiSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +27,7 @@ import javax.inject.Singleton
 class LLMLoader @Inject constructor(
     @ApplicationContext private val context: Context,
     private val llmEngine: LLMEngine,
-    private val settings: LLMSettings,
+    private val settings: AiSettings,
 ) {
     private val modelDirs = listOf(
         File(context.filesDir, "models"),

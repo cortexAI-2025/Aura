@@ -28,13 +28,25 @@ import javax.inject.Singleton
 @Singleton
 class ActionGuard @Inject constructor() {
 
-    fun evaluate(action: AgentAction, rules: UserRules): GuardDecision {
+    /**
+     * @param tainted true once content from outside the owner (web page, message, screen, calendar…) has been
+     *   read in this exchange: prompt-injection defence, any later side-effect action then needs the owner's OK.
+     */
+    fun evaluate(action: AgentAction, rules: UserRules, tainted: Boolean = false): GuardDecision {
         val toolName = action.tool.displayName()
 
         // ── 1. Tool allowlist ────────────────────────────────────────────────
         if (action.tool !in rules.allowedTools) {
             AuraLogger.log(TAG_GUARD, "CHECK $toolName → BLOCKED (not in allowedTools)")
             return GuardDecision.Block("Tool ${action.tool} is not in your allowed tools list.")
+        }
+
+        // ── 1b. Prompt-injection guard ───────────────────────────────────────
+        if (tainted && (action.tool.hasSideEffects() || action.tool.isWriteAction())) {
+            AuraLogger.log(TAG_GUARD, "CHECK $toolName → CONFIRM (external content was read)")
+            return GuardDecision.RequireConfirmation(
+                "J'ai lu du contenu externe pendant cette demande. Confirmez-vous : ${action.tool.humanName()} ?"
+            )
         }
 
         // ── 2. Pre-approved contact fast-path (bypasses quiet hours) ─────────
@@ -139,6 +151,14 @@ private fun ToolType.isWriteAction(): Boolean = this in setOf(
     ToolType.CALENDAR_WRITE, ToolType.MESSAGE_SEND,
     ToolType.PHONE_CALL, ToolType.NOTIFICATION_SEND,
     ToolType.GOAL_UPDATE, ToolType.REMINDER_SET,
+)
+
+/**
+ * Tools whose output comes from third parties and may carry hidden instructions (messages, web, screen).
+ * The owner's own calendar and contacts are deliberately not in this list.
+ */
+fun ToolType.returnsExternalContent(): Boolean = this in setOf(
+    ToolType.MESSAGE_READ, ToolType.WEB_SEARCH, ToolType.WEB_BROWSE, ToolType.SCREEN_READ,
 )
 
 /** Human-readable action description for confirmation dialogs. */

@@ -18,11 +18,15 @@ class RetrieveContextUseCase @Inject constructor(
     private val memoryRepository: MemoryRepository,
     private val goalRepository: GoalRepository,
 ) {
-    suspend operator fun invoke(queryEmbedding: FloatArray, topK: Int = 8): AgentContext =
+    /**
+     * @param includeMemories false skips the memory lookup entirely (user turned memory off).
+     */
+    suspend operator fun invoke(query: String, topK: Int = 8, includeMemories: Boolean = true): AgentContext =
         coroutineScope {
-            val memoriesDeferred = async { memoryRepository.search(queryEmbedding, topK) }
+            val memoriesDeferred = async {
+                if (includeMemories) memoryRepository.recall(query, topK) else emptyList()
+            }
             // observeActive() is a Room Flow that never completes: take ONE snapshot.
-            // (collect{} here suspended forever and froze the whole agent loop.)
             val goalsDeferred = async { goalRepository.observeActive().first().take(5) }
             AgentContext(memoriesDeferred.await(), goalsDeferred.await())
         }

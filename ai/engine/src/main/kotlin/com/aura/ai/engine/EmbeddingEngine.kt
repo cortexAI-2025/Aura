@@ -46,6 +46,9 @@ class EmbeddingEngine @Inject constructor(
     companion object {
         const val EMBEDDING_DIM = 384
         const val MAX_SEQ_LEN = 128
+        /** Embedding space tag stored with each memory: vectors of different spaces are never compared. */
+        const val KIND_MINILM = "minilm-l6-v2-int8"
+        const val KIND_STUB = "stub"
         private const val MODEL_ASSET = "models/minilm-l6-v2-int8.tflite"
         private const val VOCAB_ASSET = "models/bert_vocab.txt"
     }
@@ -70,6 +73,20 @@ class EmbeddingEngine @Inject constructor(
                 Timber.e(e, "EmbeddingEngine init failed — using stub")
                 false
             }
+        }
+    }
+
+    /** True when the real MiniLM model is installed (semantic search is then really semantic). */
+    val hasNeuralModel: Boolean get() = ensureInitialized()
+
+    /** The vector together with the space it lives in ([KIND_MINILM] or [KIND_STUB]). */
+    suspend fun embedTagged(text: String): Pair<FloatArray, String> {
+        if (!ensureInitialized()) return embedStub(text) to KIND_STUB
+        return try {
+            embedTFLite(text) to KIND_MINILM
+        } catch (e: Exception) {
+            Timber.e(e, "TFLite inference failed — falling back to stub")
+            embedStub(text) to KIND_STUB
         }
     }
 

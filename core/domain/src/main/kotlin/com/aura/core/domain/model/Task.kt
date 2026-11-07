@@ -45,6 +45,10 @@ data class AgentTask(
     val priority: TaskPriority = TaskPriority.NORMAL,
     val deadline: Instant? = null,
     val source: TaskSource = TaskSource.USER_MESSAGE,
+    /** Conversation the answer belongs to (null = the current one when the task runs). */
+    val conversationId: String? = null,
+    /** The answer will be read aloud (microphone / hands-free): the prompt asks for spoken-style replies. */
+    val voiceMode: Boolean = false,
     val createdAt: Instant = Instant.now(),
 ) {
     /**

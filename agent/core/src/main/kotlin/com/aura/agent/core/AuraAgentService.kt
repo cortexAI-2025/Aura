@@ -32,6 +32,9 @@ import javax.inject.Inject
  *   - CRITICAL tasks (deadline < 2 h) preempt any currently running task.
  *   - The service never drops a task — preempted tasks are re-enqueued at HIGH.
  */
+/** An [AgentEvent] and the conversation it belongs to. */
+data class TaggedEvent(val conversationId: String, val event: AgentEvent)
+
 @AndroidEntryPoint
 class AuraAgentService : LifecycleService() {
 
@@ -46,18 +49,24 @@ class AuraAgentService : LifecycleService() {
         const val EXTRA_MESSAGE = "extra_message"
         const val EXTRA_PRIORITY = "extra_priority"
         const val EXTRA_DEADLINE_MS = "extra_deadline_ms"
+        const val EXTRA_CONVERSATION_ID = "extra_conversation_id"
+        const val EXTRA_VOICE_MODE = "extra_voice_mode"
         const val CHANNEL_ID = "aura_service"
         /** A task that produces no final answer within this time is abandoned so the queue can't jam. */
         const val TASK_TIMEOUT_MS = 300_000L
 
-        private val _agentEvents = MutableSharedFlow<AgentEvent>(extraBufferCapacity = 64)
-        val agentEvents: SharedFlow<AgentEvent> = _agentEvents
+        private val _agentEvents = MutableSharedFlow<TaggedEvent>(extraBufferCapacity = 64)
+
+        /** Every event carries the conversation it belongs to: the UI shows only the open one. */
+        val agentEvents: SharedFlow<TaggedEvent> = _agentEvents
 
         fun processMessage(
             context: Context,
             message: String,
             priority: TaskPriority = TaskPriority.NORMAL,
             deadlineMs: Long? = null,
+            conversationId: String? = null,
+            voiceMode: Boolean = false,
         ) {
             context.startForegroundService(
                 Intent(context, AuraAgentService::class.java).apply {
@@ -65,6 +74,8 @@ class AuraAgentService : LifecycleService() {
                     putExtra(EXTRA_MESSAGE, message)
                     putExtra(EXTRA_PRIORITY, priority.name)
                     deadlineMs?.let { putExtra(EXTRA_DEADLINE_MS, it) }
+                    conversationId?.let { putExtra(EXTRA_CONVERSATION_ID, it) }
+                    putExtra(EXTRA_VOICE_MODE, voiceMode)
                 }
             )
         }
@@ -88,7 +99,11 @@ class AuraAgentService : LifecycleService() {
                     ?.let { runCatching { TaskPriority.valueOf(it) }.getOrDefault(TaskPriority.NORMAL) }
                     ?: TaskPriority.NORMAL
                 val deadlineMs = if (intent.hasExtra(EXTRA_DEADLINE_MS)) intent.getLongExtra(EXTRA_DEADLINE_MS, 0) else null
-                enqueueMessage(text, priority, deadlineMs)
+                enqueueMessage(
+                    text, priority, deadlineMs,
+                    conversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID),
+                    voiceMode = intent.getBooleanExtra(EXTRA_VOICE_MODE, false),
+                )
             }
             ACTION_PROACTIVE_TRIGGER -> {
                 val text = intent.getStringExtra(EXTRA_MESSAGE) ?: return START_STICKY
@@ -103,10 +118,14 @@ class AuraAgentService : LifecycleService() {
         priority: TaskPriority,
         deadlineMs: Long? = null,
         source: TaskSource = TaskSource.USER_MESSAGE,
+        conversationId: String? = null,
+        voiceMode: Boolean = false,
     ) {
         taskQueue.enqueue(
             AgentTask(
                 payload = text,
+                conversationId = conversationId,
+                voiceMode = voiceMode,
                 priority = priority,
                 deadline = deadlineMs?.let { Instant.ofEpochMilli(it) },
                 source = source,
@@ -133,24 +152,34 @@ class AuraAgentService : LifecycleService() {
     }
 
     private suspend fun processTask(task: AgentTask) {
-        Timber.i("Processing task: ${task.payload.take(80)}")
+        Timber.i("Processing task (${task.payload.length} chars)")
+        val convId = task.conversationId ?: conversationRepository.currentConversationId()
+        fun emitTagged(e: AgentEvent) = _agentEvents.tryEmit(TaggedEvent(convId, e))
+
         conversationRepository.addMessage(
-            Message(UUID.randomUUID().toString(), MessageRole.USER, task.payload, Instant.now())
+            convId, Message(UUID.randomUUID().toString(), MessageRole.USER, task.payload, Instant.now())
         )
 
         val finished = withTimeoutOrNull(TASK_TIMEOUT_MS) {
-            agentEngine.process(task.payload).collect { event ->
-                _agentEvents.emit(event)
+            agentEngine.process(task.payload, convId, task.voiceMode).collect { event ->
                 if (event is AgentEvent.FinalAnswer) {
+                    // Persist first so the UI, which reacts to the event, finds the message in the database.
                     conversationRepository.addMessage(
-                        Message(UUID.randomUUID().toString(), MessageRole.ASSISTANT, event.text, Instant.now())
+                        convId,
+                        Message(
+                            id = UUID.randomUUID().toString(), role = MessageRole.ASSISTANT, content = event.text,
+                            timestamp = Instant.now(), providerId = event.providerId, model = event.model,
+                            promptTokens = event.usage?.promptTokens, completionTokens = event.usage?.completionTokens,
+                            finishReason = if (event.truncated) "truncated" else null,
+                        ),
                     )
                 }
+                _agentEvents.emit(TaggedEvent(convId, event))
             }
             true
         }
         if (finished == null) {
-            _agentEvents.emit(AgentEvent.Error("Délai dépassé : aucune réponse du modèle après ${TASK_TIMEOUT_MS / 60_000} minutes."))
+            emitTagged(AgentEvent.Error("Délai dépassé : aucune réponse du modèle après ${TASK_TIMEOUT_MS / 60_000} minutes."))
         }
     }
 

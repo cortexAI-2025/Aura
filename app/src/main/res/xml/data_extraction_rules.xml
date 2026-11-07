@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Disable all cloud backup — user data stays on-device only. -->
+<!-- Disable all cloud backup — user data (including encrypted API keys, which are bound to this device's Keystore) stays on-device only. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />
@@ -9,5 +9,8 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
     </device-transfer>
 </data-extraction-rules>
